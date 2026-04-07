@@ -158,11 +158,22 @@ def normalize_text(text: str) -> str:
     return text
 
 def get_standard_by_code(code: str) -> Optional[dict]:
-    """Get standard dictionary entry by code"""
+    """Get standard dictionary entry by code from hardcoded list (for seeding)"""
     for std in STANDARD_DICTIONARY:
         if std["code"] == code:
             return std
     return None
+
+async def get_standard_by_code_db(code: str) -> Optional[dict]:
+    """Get standard dictionary entry by code from database"""
+    standard = await db.standards.find_one(
+        {"code": code, "active_flag": {"$ne": False}}, 
+        {"_id": 0}
+    )
+    if standard:
+        return {"code": standard["code"], "label": standard["label"], "description": standard.get("description", "")}
+    # Fallback to hardcoded list for backwards compatibility
+    return get_standard_by_code(code)
 
 async def match_exact(value: str, normalized: str) -> Optional[dict]:
     """Check for exact match in synonym table"""
@@ -530,7 +541,8 @@ async def create_synonym(
     user: str = "user"
 ):
     """Create a new synonym mapping"""
-    std = get_standard_by_code(standard_code)
+    # Use database lookup to support user-created standards
+    std = await get_standard_by_code_db(standard_code)
     if not std:
         raise HTTPException(status_code=400, detail=f"Invalid standard code: {standard_code}")
     
@@ -770,7 +782,7 @@ async def approve_mapping(
     
     # Determine final standard
     if standard_code:
-        std = get_standard_by_code(standard_code)
+        std = await get_standard_by_code_db(standard_code)
         if not std:
             raise HTTPException(status_code=400, detail=f"Invalid standard code: {standard_code}")
         final_id = std["code"]
@@ -804,7 +816,6 @@ async def approve_mapping(
             {"_id": 0}
         )
         if not existing:
-            std = get_standard_by_code(final_code)
             syn_doc = SynonymMapping(
                 source_value_raw=mapping["vendor_value"],
                 source_value_normalized=mapping["normalized_value"],
