@@ -14,7 +14,19 @@ const api = axios.create({
 export const getDashboardStats = () => api.get('/dashboard/stats');
 
 // Standards
-export const getStandards = () => api.get('/standards');
+export const getStandards = (includeInactive = false) => 
+  api.get('/standards', { params: { include_inactive: includeInactive } });
+
+export const createStandard = (code, label, description = '', user = 'user') =>
+  api.post('/standards', null, { params: { code, label, description, user } });
+
+export const updateStandard = (code, updates, user = 'user') =>
+  api.put(`/standards/${code}`, null, { 
+    params: { ...updates, user } 
+  });
+
+export const deactivateStandard = (code, user = 'user') =>
+  api.delete(`/standards/${code}`, { params: { user } });
 
 // Synonyms
 export const getSynonyms = (page = 1, limit = 50) => 

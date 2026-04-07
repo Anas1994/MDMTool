@@ -401,10 +401,109 @@ async def health_check():
 
 # Standards endpoints
 @api_router.get("/standards")
-async def get_standards():
+async def get_standards(include_inactive: bool = False):
     """Get all standard dictionary entries"""
-    standards = await db.standards.find({}, {"_id": 0}).to_list(100)
+    query = {} if include_inactive else {"active_flag": {"$ne": False}}
+    standards = await db.standards.find(query, {"_id": 0}).to_list(100)
     return {"standards": standards}
+
+@api_router.post("/standards")
+async def create_standard(
+    code: str,
+    label: str,
+    description: str = "",
+    user: str = "user"
+):
+    """Create a new standard dictionary entry"""
+    # Normalize code to uppercase with underscores
+    code = code.upper().strip().replace(" ", "_")
+    
+    # Check if code already exists
+    existing = await db.standards.find_one({"code": code}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Standard code '{code}' already exists")
+    
+    standard = StandardDictionary(
+        id=code,
+        code=code,
+        label=label.strip(),
+        description=description.strip(),
+        active_flag=True
+    )
+    doc = standard.model_dump()
+    await db.standards.insert_one(doc)
+    
+    # Log audit
+    audit = AuditLog(
+        action="create_standard",
+        entity_type="standard",
+        entity_id=code,
+        details={"code": code, "label": label},
+        user=user
+    ).model_dump()
+    await db.audit_logs.insert_one(audit)
+    
+    return {"success": True, "standard": standard.model_dump()}
+
+@api_router.put("/standards/{code}")
+async def update_standard(
+    code: str,
+    label: Optional[str] = None,
+    description: Optional[str] = None,
+    active_flag: Optional[bool] = None,
+    user: str = "user"
+):
+    """Update a standard dictionary entry"""
+    existing = await db.standards.find_one({"code": code}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Standard code '{code}' not found")
+    
+    update_data = {}
+    if label is not None:
+        update_data["label"] = label.strip()
+    if description is not None:
+        update_data["description"] = description.strip()
+    if active_flag is not None:
+        update_data["active_flag"] = active_flag
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    await db.standards.update_one({"code": code}, {"$set": update_data})
+    
+    # Log audit
+    audit = AuditLog(
+        action="update_standard",
+        entity_type="standard",
+        entity_id=code,
+        details={"code": code, "updates": update_data},
+        user=user
+    ).model_dump()
+    await db.audit_logs.insert_one(audit)
+    
+    updated = await db.standards.find_one({"code": code}, {"_id": 0})
+    return {"success": True, "standard": updated}
+
+@api_router.delete("/standards/{code}")
+async def deactivate_standard(code: str, user: str = "user"):
+    """Deactivate a standard (soft delete)"""
+    existing = await db.standards.find_one({"code": code}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Standard code '{code}' not found")
+    
+    await db.standards.update_one({"code": code}, {"$set": {"active_flag": False}})
+    
+    # Log audit
+    audit = AuditLog(
+        action="deactivate_standard",
+        entity_type="standard",
+        entity_id=code,
+        details={"code": code},
+        user=user
+    ).model_dump()
+    await db.audit_logs.insert_one(audit)
+    
+    return {"success": True, "message": f"Standard '{code}' deactivated"}
 
 # Synonyms endpoints
 @api_router.get("/synonyms")

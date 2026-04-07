@@ -6,13 +6,15 @@ import {
   Table, 
   ClockCounterClockwise,
   Database,
-  List
+  List,
+  BookOpen
 } from "@phosphor-icons/react";
 import Dashboard from "./pages/Dashboard";
 import UploadPage from "./pages/Upload";
 import ReviewWorkbench from "./pages/ReviewWorkbench";
 import AuditLogs from "./pages/AuditLogs";
 import Synonyms from "./pages/Synonyms";
+import Standards from "./pages/Standards";
 import BatchHistory from "./pages/BatchHistory";
 import "@/App.css";
 
@@ -24,6 +26,7 @@ const Sidebar = () => {
     { to: "/upload", icon: Upload, label: "Upload" },
     { to: "/batches", icon: List, label: "Batches" },
     { to: "/review", icon: Table, label: "Review" },
+    { to: "/standards", icon: BookOpen, label: "Standards" },
     { to: "/synonyms", icon: Database, label: "Synonyms" },
     { to: "/audit", icon: ClockCounterClockwise, label: "Audit Log" },
   ];
@@ -86,6 +89,7 @@ function App() {
             <Route path="/batches" element={<BatchHistory />} />
             <Route path="/review" element={<ReviewWorkbench />} />
             <Route path="/review/:batchId" element={<ReviewWorkbench />} />
+            <Route path="/standards" element={<Standards />} />
             <Route path="/synonyms" element={<Synonyms />} />
             <Route path="/audit" element={<AuditLogs />} />
           </Routes>
