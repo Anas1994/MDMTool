@@ -443,7 +443,7 @@ async def create_synonym(
     if existing:
         raise HTTPException(status_code=400, detail="Synonym already exists")
     
-    doc = SynonymMapping(
+    synonym_obj = SynonymMapping(
         source_value_raw=source_value,
         source_value_normalized=normalize_text(source_value),
         standard_id=std["code"],
@@ -452,7 +452,8 @@ async def create_synonym(
         confidence_default=1.0,
         rule_type="synonym",
         approved_by=user
-    ).model_dump()
+    )
+    doc = synonym_obj.model_dump()
     
     await db.synonyms.insert_one(doc)
     
@@ -460,13 +461,14 @@ async def create_synonym(
     audit = AuditLog(
         action="add_synonym",
         entity_type="synonym",
-        entity_id=doc["id"],
+        entity_id=synonym_obj.id,
         details={"source_value": source_value, "standard_code": standard_code},
         user=user
     ).model_dump()
     await db.audit_logs.insert_one(audit)
     
-    return {"success": True, "synonym": doc}
+    # Return the original object to avoid ObjectId serialization issue
+    return {"success": True, "synonym": synonym_obj.model_dump()}
 
 # File upload endpoint
 @api_router.post("/upload")
