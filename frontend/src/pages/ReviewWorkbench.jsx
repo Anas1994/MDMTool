@@ -86,16 +86,25 @@ const ConfidenceBar = ({ confidence }) => {
 };
 
 const EditSheet = ({ mapping, standards, onApprove, onClose }) => {
-  const [selectedStandard, setSelectedStandard] = useState(
-    mapping?.suggested_standard_code || ''
-  );
+  const [selectedStandard, setSelectedStandard] = useState('');
   const [addAsSynonym, setAddAsSynonym] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Reset selectedStandard when mapping changes
+  useEffect(() => {
+    if (mapping) {
+      setSelectedStandard(mapping.suggested_standard_code || '');
+      setAddAsSynonym(true);
+    }
+  }, [mapping]);
+
   const handleSave = async () => {
+    if (!selectedStandard) {
+      return;
+    }
     setSaving(true);
     try {
-      await onApprove(mapping.id, selectedStandard || null, addAsSynonym);
+      await onApprove(mapping.id, selectedStandard, addAsSynonym);
       onClose();
     } finally {
       setSaving(false);
