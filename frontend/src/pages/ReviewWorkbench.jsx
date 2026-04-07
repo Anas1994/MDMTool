@@ -291,7 +291,8 @@ export default function ReviewWorkbench() {
       toast.success('Mapping approved');
       fetchResults(batchId);
     } catch (error) {
-      toast.error('Failed to approve mapping');
+      const message = error.response?.data?.detail || 'Failed to approve mapping';
+      toast.error(message);
     }
   };
 
