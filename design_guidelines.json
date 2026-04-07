@@ -1,0 +1,101 @@
+{
+  "theme": "light",
+  "archetype": "1 (Organic & Earthy) blended with 4 (Swiss & High-Contrast) for Clinical Precision",
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk",
+      "body": "IBM Plex Sans",
+      "mono": "JetBrains Mono"
+    },
+    "hierarchy": {
+      "h1": "text-3xl sm:text-4xl tracking-tight font-bold",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-semibold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "h4": "text-lg font-medium",
+      "body": "text-sm text-slate-700 leading-relaxed",
+      "table_cell": "text-sm text-slate-900 font-normal",
+      "label": "text-xs font-medium tracking-[0.05em] uppercase text-slate-500",
+      "metric": "text-4xl font-bold tracking-tighter"
+    }
+  },
+  "colors": {
+    "background": {
+      "page": "bg-slate-50",
+      "card": "bg-white",
+      "header": "bg-white/70 backdrop-blur-xl"
+    },
+    "text": {
+      "primary": "text-slate-900",
+      "secondary": "text-slate-600",
+      "muted": "text-slate-400",
+      "inverse": "text-white"
+    },
+    "border": {
+      "default": "border-slate-200",
+      "focus": "focus:border-sky-500 focus:ring-sky-500/20"
+    },
+    "brand": {
+      "primary": "bg-sky-600 hover:bg-sky-700 text-white",
+      "primary_subtle": "bg-sky-50 text-sky-700",
+      "success": "bg-emerald-600 hover:bg-emerald-700 text-white",
+      "success_subtle": "bg-emerald-50 text-emerald-700",
+      "warning": "bg-amber-500 hover:bg-amber-600 text-white",
+      "warning_subtle": "bg-amber-50 text-amber-700",
+      "error": "bg-rose-500 text-white",
+      "error_subtle": "bg-rose-50 text-rose-700"
+    }
+  },
+  "spacing_and_layout": {
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "dashboard_grid": "grid grid-cols-1 md:grid-cols-4 gap-4",
+    "section_gap": "gap-8",
+    "card_padding": "p-6",
+    "table_density": "py-2 px-3"
+  },
+  "surface_strategies": {
+    "cards": "bg-white rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md",
+    "table_container": "bg-white rounded-xl border border-slate-200 overflow-hidden",
+    "header": "sticky top-0 z-50 border-b border-slate-200 bg-white/70 backdrop-blur-xl backdrop-saturate-150",
+    "upload_zone": "border-2 border-dashed border-slate-300 rounded-xl p-12 text-center bg-slate-50 hover:bg-slate-100 hover:border-sky-400 transition-colors"
+  },
+  "components": {
+    "buttons": {
+      "primary": "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors bg-sky-600 text-white hover:bg-sky-700 shadow-sm",
+      "secondary": "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors bg-white border border-slate-200 text-slate-700 hover:bg-slate-50",
+      "ghost": "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+    },
+    "status_badges": {
+      "auto_mapped": "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200",
+      "needs_review": "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200",
+      "unmapped": "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200"
+    },
+    "table": {
+      "header_cell": "bg-slate-50 px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider border-b border-slate-200",
+      "body_row": "hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0",
+      "body_cell": "px-4 py-3 whitespace-nowrap text-sm text-slate-900"
+    }
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "weight='duotone' for large empty states, weight='regular' for dense tables and UI controls"
+  },
+  "motion": {
+    "hover": "transition-all duration-200 ease-in-out",
+    "drawer_enter": "animate-in slide-in-from-right",
+    "fade_in": "animate-in fade-in duration-300"
+  },
+  "media": {
+    "images": {}
+  },
+  "instructions_to_main_agent": [
+    "INSTALLATION: Install '@phosphor-icons/react' for icons. Add 'Cabinet Grotesk' via fontsource or google fonts if available, otherwise fallback to Inter/system sans. Add 'IBM Plex Sans' for body and tables.",
+    "LAYOUT: Build a clinical dashboard with a left sidebar (Navigation) and a right main content area. The background should be a calming slate-50 to reduce eye strain during long review sessions.",
+    "COMPONENTS: Use Shadcn UI for structural elements (Tables, Buttons, Dropdowns, Dialogs, Sheet for the Review Drawer).",
+    "UPLOAD MODULE: Create a large, drag-and-drop file upload zone using the 'upload_zone' surface strategy. It should support CSV/Excel indications.",
+    "DASHBOARD: Implement a 4-card 'Control Room' KPI grid at the top showing: Total Values, Auto-Mapped (Green), Needs Review (Amber), Unmapped (Red).",
+    "REVIEW WORKBENCH: The core of the app. A dense, highly readable data table using IBM Plex Sans. Include a 'Confidence Score' column with a visual progress bar or color-coded badge. Clicking a row should open a Shadcn Sheet (Side Drawer) to edit synonyms and mappings without losing the table context.",
+    "INTERACTIVITY: Ensure all hover states explicitly define text colors. Use sticky headers for the data table. Add bulk action checkboxes on the left column of the table.",
+    "TESTING: Add 'data-testid' attributes to all interactive elements (e.g., data-testid='upload-file-button', data-testid='approve-mapping-row-1').",
+    "ACCESSIBILITY: Ensure text contrast meets APCA/WCAG standards, especially for the status badges and confidence scores."
+  ]
+}
