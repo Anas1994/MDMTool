@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Check,
   Upload,
@@ -512,8 +512,11 @@ const DefineFieldsStep = ({ tables, fieldDefinitions, setFieldDefinitions, onBac
   );
 };
 
-// Step 4: Standardization Gate
+// Step 4: Standardization Gate with Drag & Drop
 const StandardizationGateStep = ({ tables, fieldDefinitions, setFieldDefinitions, onBack, onNext }) => {
+  const [draggedField, setDraggedField] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+
   const standardizeFields = [];
   const storeAsIsFields = [];
 
@@ -545,6 +548,66 @@ const StandardizationGateStep = ({ tables, fieldDefinitions, setFieldDefinitions
     });
   };
 
+  const handleDragStart = (e, field, fromStandardize) => {
+    setDraggedField({ ...field, fromStandardize });
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `${field.tableId}|${field.column.name}`);
+  };
+
+  const handleDragOver = (e, target) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTarget(target);
+  };
+
+  const handleDragLeave = () => {
+    setDropTarget(null);
+  };
+
+  const handleDrop = (e, toStandardize) => {
+    e.preventDefault();
+    setDropTarget(null);
+    
+    if (draggedField && draggedField.fromStandardize !== toStandardize) {
+      toggleField(draggedField.tableId, draggedField.column.name);
+    }
+    setDraggedField(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedField(null);
+    setDropTarget(null);
+  };
+
+  const FieldChip = ({ field, isStandardize }) => (
+    <div
+      draggable
+      onDragStart={(e) => handleDragStart(e, field, isStandardize)}
+      onDragEnd={handleDragEnd}
+      className={`flex items-center justify-between p-3 rounded-lg cursor-grab active:cursor-grabbing transition-all ${
+        isStandardize ? 'bg-sky-50 hover:bg-sky-100' : 'bg-slate-50 hover:bg-slate-100'
+      } ${draggedField?.tableId === field.tableId && draggedField?.column.name === field.column.name ? 'opacity-50 scale-95' : ''}`}
+      data-testid={`field-chip-${field.column.name}`}
+    >
+      <div className="flex items-center gap-2">
+        <div className="w-1.5 h-8 bg-slate-300 rounded-full cursor-grab" />
+        <div>
+          <span className="text-sm font-medium text-slate-900">{field.column.name}</span>
+          <span className="text-xs text-slate-500 ml-2">({field.tableName})</span>
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => toggleField(field.tableId, field.column.name)}
+        className="text-slate-500 hover:text-slate-700 ml-2"
+        data-testid={`toggle-field-${field.column.name}`}
+      >
+        <ArrowRight size={16} className={isStandardize ? '' : 'rotate-180'} />
+      </Button>
+    </div>
+  );
+
   return (
     <div className="space-y-6" data-testid="gate-step">
       <div className="bg-slate-50 rounded-xl p-4 text-center">
@@ -552,67 +615,56 @@ const StandardizationGateStep = ({ tables, fieldDefinitions, setFieldDefinitions
           <span className="text-sky-600">{standardizeFields.length}</span> fields will be standardized across{' '}
           <span className="text-sky-600">{new Set(standardizeFields.map(f => f.tableId)).size}</span> tables
         </p>
+        <p className="text-sm text-slate-500 mt-1">Drag fields between columns or use arrow buttons</p>
       </div>
 
       <div className="grid grid-cols-2 gap-6">
         {/* Standardize Column */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div 
+          className={`bg-white rounded-xl border-2 overflow-hidden transition-all ${
+            dropTarget === 'standardize' ? 'border-sky-500 bg-sky-50/50' : 'border-slate-200'
+          }`}
+          onDragOver={(e) => handleDragOver(e, 'standardize')}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, true)}
+          data-testid="standardize-drop-zone"
+        >
           <div className="px-4 py-3 bg-sky-50 border-b border-sky-200">
             <h3 className="font-semibold text-sky-700">Will be Standardized ({standardizeFields.length})</h3>
           </div>
-          <div className="p-4 space-y-2 max-h-96 overflow-auto">
-            {standardizeFields.map((field, idx) => (
-              <div
-                key={`${field.tableId}-${field.column.name}`}
-                className="flex items-center justify-between p-2 bg-sky-50 rounded-lg"
-              >
-                <div>
-                  <span className="text-sm font-medium text-slate-900">{field.column.name}</span>
-                  <span className="text-xs text-slate-500 ml-2">({field.tableName})</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => toggleField(field.tableId, field.column.name)}
-                  className="text-slate-500 hover:text-slate-700"
-                >
-                  <ArrowRight size={16} />
-                </Button>
-              </div>
+          <div className="p-4 space-y-2 max-h-96 overflow-auto min-h-[200px]">
+            {standardizeFields.map((field) => (
+              <FieldChip key={`${field.tableId}-${field.column.name}`} field={field} isStandardize={true} />
             ))}
             {standardizeFields.length === 0 && (
-              <p className="text-sm text-slate-500 text-center py-4">No fields to standardize</p>
+              <div className="flex items-center justify-center h-32 text-sm text-slate-400 border-2 border-dashed border-slate-200 rounded-lg">
+                Drag fields here to standardize
+              </div>
             )}
           </div>
         </div>
 
         {/* Store as-is Column */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div 
+          className={`bg-white rounded-xl border-2 overflow-hidden transition-all ${
+            dropTarget === 'store' ? 'border-slate-500 bg-slate-50/50' : 'border-slate-200'
+          }`}
+          onDragOver={(e) => handleDragOver(e, 'store')}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, false)}
+          data-testid="store-drop-zone"
+        >
           <div className="px-4 py-3 bg-slate-100 border-b border-slate-200">
             <h3 className="font-semibold text-slate-700">Will be Stored as-is ({storeAsIsFields.length})</h3>
           </div>
-          <div className="p-4 space-y-2 max-h-96 overflow-auto">
-            {storeAsIsFields.map((field, idx) => (
-              <div
-                key={`${field.tableId}-${field.column.name}`}
-                className="flex items-center justify-between p-2 bg-slate-50 rounded-lg"
-              >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => toggleField(field.tableId, field.column.name)}
-                  className="text-slate-500 hover:text-slate-700"
-                >
-                  <ArrowRight size={16} className="rotate-180" />
-                </Button>
-                <div className="text-right">
-                  <span className="text-sm font-medium text-slate-900">{field.column.name}</span>
-                  <span className="text-xs text-slate-500 ml-2">({field.tableName})</span>
-                </div>
-              </div>
+          <div className="p-4 space-y-2 max-h-96 overflow-auto min-h-[200px]">
+            {storeAsIsFields.map((field) => (
+              <FieldChip key={`${field.tableId}-${field.column.name}`} field={field} isStandardize={false} />
             ))}
             {storeAsIsFields.length === 0 && (
-              <p className="text-sm text-slate-500 text-center py-4">All fields will be standardized</p>
+              <div className="flex items-center justify-center h-32 text-sm text-slate-400 border-2 border-dashed border-slate-200 rounded-lg">
+                Drag fields here to store as-is
+              </div>
             )}
           </div>
         </div>
@@ -803,12 +855,48 @@ const DomainReferenceStep = ({ tables, fieldDefinitions, setFieldDefinitions, do
 // Main Wizard Component
 export default function IngestionWizard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [currentStep, setCurrentStep] = useState(1);
   const [completedSteps, setCompletedSteps] = useState([]);
   const [session, setSession] = useState(null);
   const [tables, setTables] = useState([]);
   const [fieldDefinitions, setFieldDefinitions] = useState({});
   const [domains, setDomains] = useState({});
+
+  // Handle session resume from history page
+  useEffect(() => {
+    const resumeSession = location.state?.resumeSession;
+    if (resumeSession) {
+      setSession(resumeSession);
+      setTables(resumeSession.tables || []);
+      
+      // Initialize field definitions from existing table columns
+      const defs = {};
+      resumeSession.tables?.forEach(table => {
+        defs[table.id] = {};
+        table.columns?.forEach(col => {
+          defs[table.id][col.name] = {
+            data_type: col.data_type || col.inferred_type || 'string',
+            standardize: col.standardize ?? (col.inferred_type === 'string'),
+            store_as_is: col.store_as_is ?? (col.inferred_type !== 'string'),
+            domain: col.domain || null,
+          };
+        });
+      });
+      setFieldDefinitions(defs);
+      
+      // Set appropriate step based on session state
+      if (resumeSession.tables?.length > 0) {
+        setCompletedSteps([1]);
+        setCurrentStep(2);
+      }
+      
+      toast.success(`Resumed session: ${resumeSession.name}`);
+      
+      // Clear the state to prevent re-loading on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     getDomains().then(res => setDomains(res.data.domains)).catch(() => {});
