@@ -110,6 +110,8 @@ class ColumnDefinition(BaseModel):
     domain: Optional[str] = None
     standard_reference_code: Optional[str] = None
     store_as_is: bool = False
+    notes: Optional[str] = None  # Field-level documentation/comments
+    custom_references: Optional[List[str]] = None
 
 class SessionTable(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -117,6 +119,7 @@ class SessionTable(BaseModel):
     source_filename: Optional[str] = None
     columns: List[ColumnDefinition] = []
     raw_data: Optional[List[Dict[str, Any]]] = None  # Store actual data for processing
+    description: Optional[str] = None  # Table-level notes
 
 class IngestionSession(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -125,6 +128,7 @@ class IngestionSession(BaseModel):
     status: str = "draft"  # draft, ready, processing, completed
     tables: List[SessionTable] = []
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    description: Optional[str] = None  # Session-level notes
 
 # ============ DOMAIN REFERENCE DATA ============
 
@@ -1321,6 +1325,7 @@ class FieldDefinition(BaseModel):
     standard_reference_code: Optional[str] = None
     store_as_is: bool = True
     custom_references: Optional[List[str]] = None
+    notes: Optional[str] = None  # Field-level documentation
 
 class FieldDefinitionsRequest(BaseModel):
     fields: List[FieldDefinition]
@@ -1361,6 +1366,8 @@ async def save_field_definitions(
             col["store_as_is"] = field.store_as_is
             if field.custom_references:
                 col["custom_references"] = field.custom_references
+            if field.notes is not None:
+                col["notes"] = field.notes
     
     # Update in database
     await db.sessions.update_one(
@@ -1484,6 +1491,183 @@ async def process_session(session_id: str):
 async def get_domains():
     """Get all available domains and their reference values"""
     return {"domains": DOMAIN_REFERENCES}
+
+# ============ SESSION EXPORT/IMPORT ENDPOINTS ============
+
+@api_router.get("/sessions/{session_id}/export")
+async def export_session(session_id: str):
+    """Export a session as JSON for backup"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Remove raw_data to reduce file size (can be re-uploaded)
+    export_data = {
+        "version": "1.0",
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "session": {
+            "id": session["id"],
+            "name": session["name"],
+            "status": session.get("status", "draft"),
+            "description": session.get("description"),
+            "created_at": session.get("created_at"),
+            "tables": []
+        }
+    }
+    
+    for table in session.get("tables", []):
+        table_export = {
+            "id": table["id"],
+            "table_name": table["table_name"],
+            "source_filename": table.get("source_filename"),
+            "description": table.get("description"),
+            "columns": []
+        }
+        for col in table.get("columns", []):
+            col_export = {
+                "name": col["name"],
+                "inferred_type": col.get("inferred_type", "string"),
+                "data_type": col.get("data_type"),
+                "standardize": col.get("standardize", False),
+                "store_as_is": col.get("store_as_is", True),
+                "domain": col.get("domain"),
+                "notes": col.get("notes"),
+                "custom_references": col.get("custom_references"),
+                "sample_values": col.get("sample_values", [])[:5]  # Limit sample values
+            }
+            table_export["columns"].append(col_export)
+        export_data["session"]["tables"].append(table_export)
+    
+    # Return as downloadable JSON
+    import json
+    json_str = json.dumps(export_data, indent=2)
+    filename = f"session_{session['name'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.json"
+    
+    return StreamingResponse(
+        iter([json_str]),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+class SessionImportRequest(BaseModel):
+    version: str
+    session: Dict[str, Any]
+
+@api_router.post("/sessions/import")
+async def import_session(file: UploadFile = File(...)):
+    """Import a session from exported JSON file"""
+    try:
+        content = await file.read()
+        import json
+        data = json.loads(content.decode('utf-8'))
+        
+        # Validate structure
+        if "version" not in data or "session" not in data:
+            raise HTTPException(status_code=400, detail="Invalid session export file format")
+        
+        session_data = data["session"]
+        
+        # Create new session with new ID but preserve structure
+        new_session = IngestionSession(
+            name=f"{session_data['name']} (Imported)",
+            status="draft",  # Reset to draft
+            description=session_data.get("description")
+        )
+        
+        # Rebuild tables with new IDs
+        for table_data in session_data.get("tables", []):
+            new_table = SessionTable(
+                table_name=table_data["table_name"],
+                source_filename=table_data.get("source_filename"),
+                description=table_data.get("description"),
+                columns=[],
+                raw_data=[]  # No raw data in export
+            )
+            
+            for col_data in table_data.get("columns", []):
+                new_col = ColumnDefinition(
+                    name=col_data["name"],
+                    inferred_type=col_data.get("inferred_type", "string"),
+                    data_type=col_data.get("data_type"),
+                    standardize=col_data.get("standardize", False),
+                    store_as_is=col_data.get("store_as_is", True),
+                    domain=col_data.get("domain"),
+                    notes=col_data.get("notes"),
+                    custom_references=col_data.get("custom_references"),
+                    sample_values=col_data.get("sample_values", [])
+                )
+                new_table.columns.append(new_col)
+            
+            new_session.tables.append(new_table)
+        
+        # Save to database
+        doc = new_session.model_dump()
+        await db.sessions.insert_one(doc)
+        
+        return {
+            "success": True,
+            "session": {
+                "id": new_session.id,
+                "name": new_session.name,
+                "tables_count": len(new_session.tables),
+                "columns_count": sum(len(t.columns) for t in new_session.tables)
+            }
+        }
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
+
+@api_router.put("/sessions/{session_id}")
+async def update_session(
+    session_id: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None
+):
+    """Update session metadata"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    update_data = {}
+    if name is not None:
+        update_data["name"] = name
+    if description is not None:
+        update_data["description"] = description
+    
+    if update_data:
+        await db.sessions.update_one({"id": session_id}, {"$set": update_data})
+    
+    return {"success": True}
+
+@api_router.put("/sessions/{session_id}/tables/{table_id}")
+async def update_table(
+    session_id: str,
+    table_id: str,
+    table_name: Optional[str] = None,
+    description: Optional[str] = None
+):
+    """Update table metadata"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    update_data = {}
+    if table_name is not None:
+        update_data["tables.$.table_name"] = table_name
+    if description is not None:
+        update_data["tables.$.description"] = description
+    
+    if update_data:
+        result = await db.sessions.update_one(
+            {"id": session_id, "tables.id": table_id},
+            {"$set": update_data}
+        )
+        if result.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Table not found")
+    
+    return {"success": True}
 
 # Include the router in the main app
 app.include_router(api_router)

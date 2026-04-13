@@ -90,8 +90,8 @@ export const getAuditLogs = (page = 1, limit = 50, action = null) =>
 // ============ INGESTION SESSIONS ============
 
 // Sessions
-export const createSession = (name) =>
-  api.post('/sessions', null, { params: { name } });
+export const createSession = (name, description = null) =>
+  api.post('/sessions', null, { params: { name, description } });
 
 export const getSessions = (page = 1, limit = 20) =>
   api.get('/sessions', { params: { page, limit } });
@@ -99,8 +99,22 @@ export const getSessions = (page = 1, limit = 20) =>
 export const getSession = (sessionId) =>
   api.get(`/sessions/${sessionId}`);
 
+export const updateSession = (sessionId, name = null, description = null) =>
+  api.put(`/sessions/${sessionId}`, null, { params: { name, description } });
+
 export const deleteSession = (sessionId) =>
   api.delete(`/sessions/${sessionId}`);
+
+export const exportSession = (sessionId) =>
+  api.get(`/sessions/${sessionId}/export`, { responseType: 'blob' });
+
+export const importSession = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post('/sessions/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
 
 // Session Tables
 export const uploadToSession = (sessionId, file) => {
@@ -113,6 +127,9 @@ export const uploadToSession = (sessionId, file) => {
 
 export const createManualTable = (sessionId, tableName) =>
   api.post(`/sessions/${sessionId}/tables`, null, { params: { table_name: tableName } });
+
+export const updateTable = (sessionId, tableId, tableName = null, description = null) =>
+  api.put(`/sessions/${sessionId}/tables/${tableId}`, null, { params: { table_name: tableName, description } });
 
 export const deleteTable = (sessionId, tableId) =>
   api.delete(`/sessions/${sessionId}/tables/${tableId}`);

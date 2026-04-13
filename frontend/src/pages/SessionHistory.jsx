@@ -9,7 +9,9 @@ import {
   CheckCircle,
   Spinner,
   Warning,
-  File
+  File,
+  DownloadSimple,
+  UploadSimple
 } from '@phosphor-icons/react';
 import { Button } from '../components/ui/button';
 import {
@@ -23,7 +25,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '../components/ui/alert-dialog';
-import { getSessions, deleteSession } from '../lib/api';
+import { getSessions, deleteSession, exportSession, importSession } from '../lib/api';
 import { toast } from 'sonner';
 
 const STATUS_CONFIG = {
@@ -45,7 +47,7 @@ const formatDate = (dateStr) => {
   });
 };
 
-const SessionCard = ({ session, onDelete, onResume }) => {
+const SessionCard = ({ session, onDelete, onResume, onExport }) => {
   const status = STATUS_CONFIG[session.status] || STATUS_CONFIG.draft;
   const StatusIcon = status.icon;
   const tableCount = session.tables?.length || 0;
@@ -66,6 +68,9 @@ const SessionCard = ({ session, onDelete, onResume }) => {
             <p className="text-sm text-slate-500 mt-0.5">
               {tableCount} {tableCount === 1 ? 'table' : 'tables'} • {columnCount} columns
             </p>
+            {session.description && (
+              <p className="text-xs text-slate-400 mt-1">{session.description}</p>
+            )}
           </div>
         </div>
         
@@ -100,6 +105,16 @@ const SessionCard = ({ session, onDelete, onResume }) => {
         </p>
         
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onExport(session.id, session.name)}
+            title="Export session"
+            data-testid={`export-session-${session.id}`}
+          >
+            <DownloadSimple size={16} />
+          </Button>
+          
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -162,6 +177,7 @@ export default function SessionHistory() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
 
@@ -196,9 +212,45 @@ export default function SessionHistory() {
   };
 
   const handleResume = (session) => {
-    // Navigate to ingestion wizard with session data
-    // For now, just show a toast - full resume would require state management
     navigate('/ingest', { state: { resumeSession: session } });
+  };
+
+  const handleExport = async (sessionId, sessionName) => {
+    try {
+      const response = await exportSession(sessionId);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `session_${sessionName.replace(/\s+/g, '_')}.json`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success('Session exported');
+    } catch (error) {
+      toast.error('Failed to export session');
+    }
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (!file.name.endsWith('.json')) {
+      toast.error('Please select a JSON file');
+      return;
+    }
+    
+    setImporting(true);
+    try {
+      const response = await importSession(file);
+      toast.success(`Imported: ${response.data.session.name} (${response.data.session.tables_count} tables)`);
+      fetchSessions();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to import session');
+    } finally {
+      setImporting(false);
+      e.target.value = ''; // Reset input
+    }
   };
 
   return (
@@ -209,10 +261,28 @@ export default function SessionHistory() {
             <h1 className="text-2xl font-bold text-slate-900">Ingestion Sessions</h1>
             <p className="text-slate-500 mt-1">View and manage your data ingestion sessions</p>
           </div>
-          <Button onClick={() => navigate('/ingest')} data-testid="new-session-btn">
-            <Plus size={18} className="mr-2" />
-            New Session
-          </Button>
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              id="import-session"
+              accept=".json"
+              onChange={handleImport}
+              className="hidden"
+            />
+            <Button
+              variant="outline"
+              onClick={() => document.getElementById('import-session').click()}
+              disabled={importing}
+              data-testid="import-session-btn"
+            >
+              <UploadSimple size={18} className="mr-2" />
+              {importing ? 'Importing...' : 'Import'}
+            </Button>
+            <Button onClick={() => navigate('/ingest')} data-testid="new-session-btn">
+              <Plus size={18} className="mr-2" />
+              New Session
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -239,6 +309,7 @@ export default function SessionHistory() {
                 session={session}
                 onDelete={handleDelete}
                 onResume={handleResume}
+                onExport={handleExport}
               />
             ))}
           </div>

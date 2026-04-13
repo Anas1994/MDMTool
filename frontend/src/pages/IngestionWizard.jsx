@@ -495,6 +495,16 @@ const DefineFieldsStep = ({ tables, fieldDefinitions, setFieldDefinitions, onBac
                       </div>
                     </div>
                   </div>
+                  {/* Notes/Comments field */}
+                  <div className="mt-3">
+                    <Input
+                      placeholder="Add notes or documentation for this field..."
+                      value={def.notes || ''}
+                      onChange={(e) => updateField(table.id, col.name, 'notes', e.target.value)}
+                      className="text-sm bg-white"
+                      data-testid={`field-notes-${col.name}`}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -970,6 +980,7 @@ export default function IngestionWizard() {
           domain: def.domain || null,
           store_as_is: def.store_as_is ?? true,
           custom_references: def.custom_references || null,
+          notes: def.notes || null,
         }));
         
         if (fields.length > 0) {
