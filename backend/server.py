@@ -1165,6 +1165,97 @@ async def mark_unmapped(mapping_id: str, user: str = "user"):
     
     return {"success": True}
 
+# Batch retry endpoint
+@api_router.post("/batches/{batch_id}/retry")
+async def retry_batch_matching(
+    batch_id: str,
+    status_filter: str = Query("unmapped", description="Which statuses to retry: unmapped, needs_review, both"),
+    user: str = "user"
+):
+    """Re-run matching engine on unmapped/needs_review values in a batch"""
+    batch = await db.batches.find_one({"id": batch_id}, {"_id": 0})
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    # Build query based on filter
+    query = {"batch_id": batch_id}
+    if status_filter == "unmapped":
+        query["status"] = "unmapped"
+    elif status_filter == "needs_review":
+        query["status"] = "needs_review"
+    elif status_filter == "both":
+        query["status"] = {"$in": ["unmapped", "needs_review"]}
+    else:
+        query["status"] = "unmapped"
+    
+    mappings = await db.mapping_results.find(query, {"_id": 0}).to_list(10000)
+    
+    if not mappings:
+        return {"success": True, "message": "No values to retry", "retried": 0, "newly_matched": 0}
+    
+    newly_auto = 0
+    newly_review = 0
+    still_unmapped = 0
+    
+    for mapping in mappings:
+        old_status = mapping["status"]
+        match_result = await run_matching_engine(mapping["vendor_value"])
+        new_status = match_result.get("status", "unmapped")
+        
+        if new_status == "auto" or (new_status != "unmapped" and new_status != old_status):
+            update_data = {
+                "suggested_standard_id": match_result.get("standard_id"),
+                "suggested_standard_code": match_result.get("standard_code"),
+                "suggested_standard_label": match_result.get("standard_label"),
+                "confidence": match_result.get("confidence", 0.0),
+                "match_type": match_result.get("match_type", "no_match"),
+                "status": new_status,
+            }
+            if new_status == "auto":
+                update_data["final_standard_id"] = match_result.get("standard_id")
+                update_data["final_standard_code"] = match_result.get("standard_code")
+                update_data["final_standard_label"] = match_result.get("standard_label")
+                newly_auto += 1
+            else:
+                newly_review += 1
+            
+            await db.mapping_results.update_one({"id": mapping["id"]}, {"$set": update_data})
+            
+            # Update batch stats
+            if old_status == "unmapped" and new_status == "auto":
+                await db.batches.update_one({"id": batch_id}, {"$inc": {"unmapped": -1, "auto_mapped": 1}})
+            elif old_status == "unmapped" and new_status == "needs_review":
+                await db.batches.update_one({"id": batch_id}, {"$inc": {"unmapped": -1, "needs_review": 1}})
+            elif old_status == "needs_review" and new_status == "auto":
+                await db.batches.update_one({"id": batch_id}, {"$inc": {"needs_review": -1, "auto_mapped": 1}})
+        else:
+            still_unmapped += 1
+    
+    # Audit log
+    audit = AuditLog(
+        action="batch_retry",
+        entity_type="batch",
+        entity_id=batch_id,
+        details={
+            "retried": len(mappings),
+            "newly_auto": newly_auto,
+            "newly_review": newly_review,
+            "still_unmapped": still_unmapped,
+            "filter": status_filter
+        },
+        user=user
+    ).model_dump()
+    await db.audit_logs.insert_one(audit)
+    
+    return {
+        "success": True,
+        "retried": len(mappings),
+        "newly_matched": newly_auto + newly_review,
+        "newly_auto": newly_auto,
+        "newly_review": newly_review,
+        "still_unmapped": still_unmapped
+    }
+
 # Export endpoint
 @api_router.get("/batches/{batch_id}/export")
 async def export_batch(batch_id: str):

@@ -67,6 +67,9 @@ export const getBatchResults = (batchId, params = {}) => {
 export const exportBatch = (batchId) => 
   api.get(`/batches/${batchId}/export`, { responseType: 'blob' });
 
+export const retryBatchMatching = (batchId, statusFilter = 'unmapped') =>
+  api.post(`/batches/${batchId}/retry`, null, { params: { status_filter: statusFilter } });
+
 // Mappings
 export const approveMapping = (mappingId, standardCode = null, addAsSynonym = false, user = 'user') =>
   api.put(`/mappings/${mappingId}/approve`, null, {

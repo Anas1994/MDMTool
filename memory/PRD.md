@@ -282,3 +282,20 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - Global CSS overrides for `bg-white`, `bg-slate-50`, `border-slate-*`, `text-slate-*` patterns
 - Sidebar, cards, tables, charts, status badges all properly themed
 - Moon/Sun icon toggle with label (shows opposite mode name)
+
+---
+
+## Batch Retry Matching (April 13, 2026)
+
+### New Features Added
+
+#### Backend
+- `POST /api/batches/{batch_id}/retry` - Re-processes unmapped/needs_review values through the matching engine
+- `status_filter` parameter: "unmapped", "needs_review", or "both"
+- Updates mapping results and batch stats in real-time
+- Audit logging for retry operations
+
+#### Frontend — Review Workbench
+- "Retry Match" button (sky-blue, ArrowsClockwise icon) visible when batch has unmapped or needs_review values
+- Loading spinner during retry
+- Toast notification with retry results (newly auto/review/still unmapped)

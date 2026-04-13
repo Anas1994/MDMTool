@@ -13,7 +13,8 @@ import {
   CaretDown,
   X,
   Brain,
-  Spinner
+  Spinner,
+  ArrowsClockwise
 } from '@phosphor-icons/react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -52,6 +53,7 @@ import {
   bulkApproveMappings,
   markUnmapped,
   exportBatch,
+  retryBatchMatching,
   getAiMatchingStatus,
   previewAiMatching,
   runAiMatching
@@ -250,6 +252,7 @@ export default function ReviewWorkbench() {
   const [aiRunning, setAiRunning] = useState(false);
   const [aiPreview, setAiPreview] = useState(null);
   const [showAiConfirm, setShowAiConfirm] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const fetchResults = useCallback(async (batchIdToFetch) => {
     if (!batchIdToFetch) return;
@@ -415,6 +418,25 @@ export default function ReviewWorkbench() {
     }
   };
 
+  const handleRetry = async () => {
+    if (!batchId) return;
+    setRetrying(true);
+    try {
+      const res = await retryBatchMatching(batchId, 'both');
+      const { retried, newly_auto, newly_review, still_unmapped } = res.data;
+      if (newly_auto + newly_review > 0) {
+        toast.success(`Retry: ${newly_auto} auto-matched, ${newly_review} needs review. ${still_unmapped} still unmapped.`);
+      } else {
+        toast.info(`Retried ${retried} values — no new matches found.`);
+      }
+      fetchResults(batchId);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Retry failed');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   if (loading && !currentBatch) {
     return (
       <div className="p-8 flex items-center justify-center min-h-screen">
@@ -515,6 +537,24 @@ export default function ReviewWorkbench() {
                 <Brain size={16} className="mr-1.5" weight="duotone" />
               )}
               {aiRunning ? 'AI Running...' : 'AI Match'}
+            </Button>
+          )}
+
+          {currentBatch && (currentBatch.unmapped > 0 || currentBatch.needs_review > 0) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRetry}
+              disabled={retrying}
+              className="border-sky-200 text-sky-700 hover:bg-sky-50"
+              data-testid="retry-matching-btn"
+            >
+              {retrying ? (
+                <Spinner size={16} className="mr-1.5 animate-spin" />
+              ) : (
+                <ArrowsClockwise size={16} className="mr-1.5" />
+              )}
+              {retrying ? 'Retrying...' : 'Retry Match'}
             </Button>
           )}
           
