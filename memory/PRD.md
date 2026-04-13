@@ -60,6 +60,8 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - ✅ Multi-step Ingestion Pipeline
 - ✅ Session History & Export/Import
 - ✅ Database Connectivity (PostgreSQL, MySQL, SQLite)
+- ✅ User-defined Keyword Rules (Phase 2)
+- ✅ AI-Powered Matching with GPT-5.2 (Phase 3)
 
 ### P1 - Important (Next)
 - [ ] Dynamic standard list management improvements
@@ -196,3 +198,37 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - 18/18 backend API tests passed
 - All frontend UI workflows verified
 - Integration test: custom rules affect matching engine results
+
+---
+
+## Phase 3: AI-Powered Matching (April 13, 2026)
+
+### New Features Added
+
+#### Backend
+- AI matching engine using GPT-5.2 via emergentintegrations library
+- `GET /api/ai-matching/status` - Check if AI key is configured
+- `POST /api/ai-matching/preview` - Preview unmapped values count and samples before AI run
+- `POST /api/ai-matching/run` - Send unmapped values to GPT-5.2 for classification
+- AI results auto-approve at >= 85% confidence, otherwise needs_review
+- Batch stats auto-updated after AI matching
+- Audit logging for AI matching runs (with model info)
+
+#### Frontend — Review Workbench Enhancement
+- "AI Match" button (purple, Brain icon) appears when batch has unmapped values
+- Confirmation dialog shows value count, sample values, and GPT-5.2 model reference
+- Loading state during AI processing
+- Toast notification with matched/review/still-unmapped counts
+- "AI" option added to match type filter dropdown
+
+### Technical Details
+- Uses emergentintegrations LlmChat with EMERGENT_LLM_KEY
+- Sends structured prompt with all standard codes and descriptions for context
+- AI returns JSON array with vendor_value, standard_code, confidence, reasoning
+- Confidence >= 0.85 → auto-approved, < 0.85 → needs_review, null → stays unmapped
+- Only processes values with status "unmapped" — never re-processes matched values
+
+### Testing
+- 11/11 backend API tests passed
+- All frontend UI workflows verified
+- Real GPT-5.2 integration tested with healthcare data
