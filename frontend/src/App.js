@@ -10,7 +10,8 @@ import {
   BookOpen,
   FolderOpen,
   Folder,
-  Lightning
+  Lightning,
+  Flask
 } from "@phosphor-icons/react";
 import Dashboard from "./pages/Dashboard";
 import UploadPage from "./pages/Upload";
@@ -22,6 +23,7 @@ import BatchHistory from "./pages/BatchHistory";
 import IngestionWizard from "./pages/IngestionWizard";
 import SessionHistory from "./pages/SessionHistory";
 import KeywordRules from "./pages/KeywordRules";
+import Sandbox from "./pages/Sandbox";
 import "@/App.css";
 
 const Sidebar = () => {
@@ -37,6 +39,7 @@ const Sidebar = () => {
     { to: "/standards", icon: BookOpen, label: "Standards" },
     { to: "/synonyms", icon: Database, label: "Synonyms" },
     { to: "/keyword-rules", icon: Lightning, label: "Keyword Rules" },
+    { to: "/sandbox", icon: Flask, label: "Test Sandbox" },
     { to: "/audit", icon: ClockCounterClockwise, label: "Audit Log" },
   ];
 
@@ -103,6 +106,7 @@ function App() {
             <Route path="/standards" element={<Standards />} />
             <Route path="/synonyms" element={<Synonyms />} />
             <Route path="/keyword-rules" element={<KeywordRules />} />
+            <Route path="/sandbox" element={<Sandbox />} />
             <Route path="/audit" element={<AuditLogs />} />
           </Routes>
         </main>

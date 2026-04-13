@@ -1816,6 +1816,64 @@ async def delete_keyword_rule(rule_id: str, user: str = "user"):
     
     return {"success": True}
 
+# ============ MATCHING SANDBOX ENDPOINT ============
+
+@api_router.post("/sandbox/test")
+async def test_value_matching(value: str):
+    """Test a single value against all matching steps and return detailed results"""
+    normalized = normalize_text(value)
+    steps = []
+    
+    # Step 1: Exact match
+    exact_result = await match_exact(value, normalized)
+    steps.append({
+        "step": 1,
+        "name": "Exact Match",
+        "description": "Checks synonym table for exact raw value match",
+        "matched": exact_result is not None,
+        "result": exact_result
+    })
+    
+    # Step 2: Normalized match
+    norm_result = await match_normalized(normalized)
+    steps.append({
+        "step": 2,
+        "name": "Normalized Match",
+        "description": "Checks synonym table for normalized value match",
+        "matched": norm_result is not None,
+        "result": norm_result
+    })
+    
+    # Step 3: Keyword rules
+    kw_result = await match_keyword_rules(normalized)
+    steps.append({
+        "step": 3,
+        "name": "Keyword Rules",
+        "description": "Checks keyword patterns (simple and compound rules)",
+        "matched": kw_result is not None,
+        "result": kw_result
+    })
+    
+    # Step 4: Fuzzy matching
+    fuzzy_result = await match_fuzzy(normalized)
+    steps.append({
+        "step": 4,
+        "name": "Fuzzy Match",
+        "description": "Rapidfuzz similarity scoring against synonyms and standards",
+        "matched": fuzzy_result is not None,
+        "result": fuzzy_result
+    })
+    
+    # Determine final result (first match wins)
+    final = await run_matching_engine(value)
+    
+    return {
+        "input_value": value,
+        "normalized_value": normalized,
+        "steps": steps,
+        "final_result": final
+    }
+
 # ============ AI MATCHING ENDPOINTS ============
 
 class AiMatchRequest(BaseModel):

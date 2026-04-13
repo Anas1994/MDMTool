@@ -175,6 +175,11 @@ export const previewAiMatching = (batchId) =>
 export const runAiMatching = (batchId) =>
   api.post('/ai-matching/run', { batch_id: batchId });
 
+// ============ SANDBOX ============
+
+export const testValueMatching = (value) =>
+  api.post('/sandbox/test', null, { params: { value } });
+
 // ============ DATABASE CONNECTIONS ============
 
 export const getConnections = () => api.get('/connections');

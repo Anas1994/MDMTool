@@ -232,3 +232,22 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - 11/11 backend API tests passed
 - All frontend UI workflows verified
 - Real GPT-5.2 integration tested with healthcare data
+
+---
+
+## Rule Testing Sandbox (April 13, 2026)
+
+### New Features Added
+
+#### Backend
+- `POST /api/sandbox/test?value={value}` - Tests a value against ALL 4 matching steps independently (doesn't short-circuit), returning results from every step plus the final winner
+
+#### Frontend — Test Sandbox Page (/sandbox)
+- Large input field with Enter key support
+- Shows normalized value
+- 4-column pipeline visualization showing each step's result (matched/not, standard code, confidence bar)
+- "WINNER" badge on the step that provides the final result
+- Color-coded steps (sky/teal/amber/purple)
+- Final Result card with standard label, code, match type, confidence, and status
+- Recent Tests history (last 10) as clickable chips
+- Added to sidebar with Flask icon
