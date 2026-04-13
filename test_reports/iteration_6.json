@@ -1,0 +1,84 @@
+{
+  "summary": "Full regression test completed for MDM Mapping Tool after 7 features shipped. All 29 backend API tests passed. All 10+ frontend pages tested successfully including Dashboard, Ingestion Wizard, Keyword Rules, Test Sandbox, Review Workbench, Standards, Synonyms, Sessions, Batches, Quick Upload, and Audit Log.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Keyword Rules Dialog", "issues": ["Console warning: Missing Description or aria-describedby for DialogContent - accessibility improvement needed"]},
+      {"screen": "Database Connect Dialog", "issues": ["Console warning: Missing Description or aria-describedby for DialogContent - accessibility improvement needed"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_regression_full.py",
+    "/app/test_reports/pytest/regression_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor: Dialog components missing aria-describedby for accessibility compliance"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_regression_full.py"
+  ],
+  "success_rate": {
+    "backend": "100% (29/29 tests passed)",
+    "frontend": "100% (all pages load, all features work)"
+  },
+  "test_credentials": "No authentication required",
+  "seed_data_creation": "None - used existing seeded data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Full regression passed. All 10 sidebar navigation links work. Dashboard shows KPI cards, donut chart, bar chart, confidence histogram, batch performance table. Ingestion Wizard shows 3 cards (Upload File, Connect Database, Create Table Manually) after session creation. Keyword Rules CRUD works with 13 seeded rules. Test Sandbox shows 4-step pipeline with winner highlighting. Review Workbench has AI Match, Retry Match, Export buttons with filters including AI match type. Dark mode toggle works and persists. Standards (67) and Synonyms (365+) CRUD work. Sessions, Batches, Quick Upload, Audit Log all functional.",
+  "features_tested": {
+    "dashboard": {
+      "kpi_cards": "5 cards present",
+      "donut_chart": "Present",
+      "bar_chart": "Present",
+      "confidence_histogram": "Present",
+      "batch_performance_table": "5 rows present"
+    },
+    "sidebar_navigation": {
+      "total_links": 11,
+      "all_working": true,
+      "links": ["Dashboard", "New Ingestion", "Sessions", "Quick Upload", "Batches", "Review", "Standards", "Synonyms", "Keyword Rules", "Test Sandbox", "Audit Log"]
+    },
+    "dark_mode": {
+      "toggle_present": true,
+      "toggle_works": true
+    },
+    "ingestion_wizard": {
+      "step1_cards": ["Upload File", "Connect Database", "Create Table Manually"],
+      "db_connect_dialog": "Works",
+      "stepper": "Present"
+    },
+    "keyword_rules": {
+      "rules_count": 13,
+      "crud_operations": "All work (create, edit, delete, toggle)"
+    },
+    "test_sandbox": {
+      "input_field": "Present",
+      "test_button": "Present",
+      "pipeline_steps": 4,
+      "winner_highlighting": "Works"
+    },
+    "review_workbench": {
+      "ai_match_button": "Present",
+      "retry_match_button": "Present",
+      "export_button": "Present",
+      "batch_selector": "Present",
+      "filters": ["status", "match_type (including AI)"],
+      "pagination": "Present"
+    },
+    "standards": {
+      "count": 67,
+      "crud": "Works"
+    },
+    "synonyms": {
+      "count": "365+",
+      "crud": "Works"
+    }
+  }
+}
