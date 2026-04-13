@@ -15,6 +15,10 @@ import io
 import re
 import unicodedata
 from rapidfuzz import fuzz, process
+import json
+import asyncpg
+import aiomysql
+import aiosqlite
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -129,6 +133,25 @@ class IngestionSession(BaseModel):
     tables: List[SessionTable] = []
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     description: Optional[str] = None  # Session-level notes
+    connection_id: Optional[str] = None  # Link to database connection
+
+# ============ DATABASE CONNECTION MODELS ============
+
+class DatabaseConnection(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    db_type: str  # postgresql, mysql, sqlserver, sqlite
+    host: Optional[str] = None
+    port: Optional[int] = None
+    database: str
+    username: Optional[str] = None
+    password: Optional[str] = None  # Will be stored encrypted in production
+    ssl_enabled: bool = False
+    connection_string: Optional[str] = None  # For custom connection strings
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_used: Optional[str] = None
+    status: str = "active"  # active, inactive, error
 
 # ============ DOMAIN REFERENCE DATA ============
 
@@ -1491,6 +1514,407 @@ async def process_session(session_id: str):
 async def get_domains():
     """Get all available domains and their reference values"""
     return {"domains": DOMAIN_REFERENCES}
+
+# ============ DATABASE CONNECTION ENDPOINTS ============
+
+async def get_db_connection(conn_config: dict):
+    """Create a database connection based on type"""
+    db_type = conn_config.get("db_type")
+    
+    if db_type == "postgresql":
+        return await asyncpg.connect(
+            host=conn_config.get("host", "localhost"),
+            port=conn_config.get("port", 5432),
+            database=conn_config.get("database"),
+            user=conn_config.get("username"),
+            password=conn_config.get("password"),
+            ssl=conn_config.get("ssl_enabled", False)
+        )
+    elif db_type == "mysql":
+        return await aiomysql.connect(
+            host=conn_config.get("host", "localhost"),
+            port=conn_config.get("port", 3306),
+            db=conn_config.get("database"),
+            user=conn_config.get("username"),
+            password=conn_config.get("password")
+        )
+    elif db_type == "sqlite":
+        return await aiosqlite.connect(conn_config.get("database"))
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported database type: {db_type}")
+
+async def fetch_tables_from_db(conn_config: dict) -> List[dict]:
+    """Fetch table list from database"""
+    db_type = conn_config.get("db_type")
+    tables = []
+    
+    try:
+        if db_type == "postgresql":
+            conn = await get_db_connection(conn_config)
+            try:
+                rows = await conn.fetch("""
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                    ORDER BY table_name
+                """)
+                tables = [{"name": row["table_name"], "schema": "public"} for row in rows]
+            finally:
+                await conn.close()
+        
+        elif db_type == "mysql":
+            conn = await get_db_connection(conn_config)
+            try:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SHOW TABLES")
+                    rows = await cursor.fetchall()
+                    tables = [{"name": row[0], "schema": conn_config.get("database")} for row in rows]
+            finally:
+                conn.close()
+        
+        elif db_type == "sqlite":
+            async with aiosqlite.connect(conn_config.get("database")) as conn:
+                cursor = await conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+                rows = await cursor.fetchall()
+                tables = [{"name": row[0], "schema": "main"} for row in rows]
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch tables: {str(e)}")
+    
+    return tables
+
+async def fetch_columns_from_db(conn_config: dict, table_name: str) -> List[dict]:
+    """Fetch column information from a table"""
+    db_type = conn_config.get("db_type")
+    columns = []
+    
+    try:
+        if db_type == "postgresql":
+            conn = await get_db_connection(conn_config)
+            try:
+                rows = await conn.fetch("""
+                    SELECT column_name, data_type, is_nullable
+                    FROM information_schema.columns 
+                    WHERE table_schema = 'public' AND table_name = $1
+                    ORDER BY ordinal_position
+                """, table_name)
+                columns = [{
+                    "name": row["column_name"],
+                    "db_type": row["data_type"],
+                    "nullable": row["is_nullable"] == "YES"
+                } for row in rows]
+            finally:
+                await conn.close()
+        
+        elif db_type == "mysql":
+            conn = await get_db_connection(conn_config)
+            try:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(f"DESCRIBE `{table_name}`")
+                    rows = await cursor.fetchall()
+                    columns = [{
+                        "name": row[0],
+                        "db_type": row[1],
+                        "nullable": row[2] == "YES"
+                    } for row in rows]
+            finally:
+                conn.close()
+        
+        elif db_type == "sqlite":
+            async with aiosqlite.connect(conn_config.get("database")) as conn:
+                cursor = await conn.execute(f"PRAGMA table_info({table_name})")
+                rows = await cursor.fetchall()
+                columns = [{
+                    "name": row[1],
+                    "db_type": row[2],
+                    "nullable": row[3] == 0
+                } for row in rows]
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch columns: {str(e)}")
+    
+    return columns
+
+async def fetch_sample_data(conn_config: dict, table_name: str, columns: List[str], limit: int = 100) -> List[dict]:
+    """Fetch sample data from a table"""
+    db_type = conn_config.get("db_type")
+    data = []
+    
+    try:
+        col_list = ", ".join([f'"{c}"' if db_type == "postgresql" else f"`{c}`" for c in columns])
+        
+        if db_type == "postgresql":
+            conn = await get_db_connection(conn_config)
+            try:
+                rows = await conn.fetch(f'SELECT {col_list} FROM "{table_name}" LIMIT {limit}')
+                data = [dict(row) for row in rows]
+            finally:
+                await conn.close()
+        
+        elif db_type == "mysql":
+            conn = await get_db_connection(conn_config)
+            try:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    await cursor.execute(f"SELECT {col_list} FROM `{table_name}` LIMIT {limit}")
+                    data = await cursor.fetchall()
+            finally:
+                conn.close()
+        
+        elif db_type == "sqlite":
+            col_list_sqlite = ", ".join([f'"{c}"' for c in columns])
+            async with aiosqlite.connect(conn_config.get("database")) as conn:
+                conn.row_factory = aiosqlite.Row
+                cursor = await conn.execute(f'SELECT {col_list_sqlite} FROM "{table_name}" LIMIT {limit}')
+                rows = await cursor.fetchall()
+                data = [dict(row) for row in rows]
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch data: {str(e)}")
+    
+    return data
+
+def map_db_type_to_inferred(db_type: str) -> str:
+    """Map database column types to our inferred types"""
+    db_type = db_type.lower()
+    if any(t in db_type for t in ['int', 'numeric', 'decimal', 'float', 'double', 'real', 'money']):
+        return "numeric"
+    elif any(t in db_type for t in ['date', 'time', 'timestamp']):
+        return "date"
+    elif any(t in db_type for t in ['bool', 'bit']):
+        return "boolean"
+    else:
+        return "string"
+
+class ConnectionTestRequest(BaseModel):
+    db_type: str
+    host: Optional[str] = None
+    port: Optional[int] = None
+    database: str
+    username: Optional[str] = None
+    password: Optional[str] = None
+    ssl_enabled: bool = False
+
+@api_router.post("/connections")
+async def create_connection(
+    name: str,
+    db_type: str,
+    database: str,
+    host: Optional[str] = None,
+    port: Optional[int] = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+    ssl_enabled: bool = False
+):
+    """Create a new database connection"""
+    # Set default ports
+    if port is None:
+        default_ports = {"postgresql": 5432, "mysql": 3306, "sqlserver": 1433}
+        port = default_ports.get(db_type)
+    
+    connection = DatabaseConnection(
+        name=name,
+        db_type=db_type,
+        host=host,
+        port=port,
+        database=database,
+        username=username,
+        password=password,
+        ssl_enabled=ssl_enabled
+    )
+    
+    doc = connection.model_dump()
+    await db.connections.insert_one(doc)
+    
+    # Don't return password or _id
+    safe_doc = connection.model_dump()
+    safe_doc.pop("password", None)
+    return {"success": True, "connection": safe_doc}
+
+@api_router.get("/connections")
+async def list_connections():
+    """List all database connections"""
+    connections = await db.connections.find({"status": "active"}, {"_id": 0, "password": 0}).to_list(100)
+    return {"connections": connections}
+
+@api_router.get("/connections/{connection_id}")
+async def get_connection(connection_id: str):
+    """Get a specific connection"""
+    connection = await db.connections.find_one({"id": connection_id}, {"_id": 0, "password": 0})
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    return connection
+
+@api_router.delete("/connections/{connection_id}")
+async def delete_connection(connection_id: str):
+    """Delete a database connection"""
+    result = await db.connections.delete_one({"id": connection_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    return {"success": True}
+
+@api_router.post("/connections/test")
+async def test_connection(request: ConnectionTestRequest):
+    """Test a database connection"""
+    try:
+        conn_config = request.model_dump()
+        
+        if request.db_type == "postgresql":
+            conn = await asyncpg.connect(
+                host=request.host or "localhost",
+                port=request.port or 5432,
+                database=request.database,
+                user=request.username,
+                password=request.password,
+                ssl=request.ssl_enabled
+            )
+            await conn.close()
+        elif request.db_type == "mysql":
+            conn = await aiomysql.connect(
+                host=request.host or "localhost",
+                port=request.port or 3306,
+                db=request.database,
+                user=request.username,
+                password=request.password
+            )
+            conn.close()
+        elif request.db_type == "sqlite":
+            async with aiosqlite.connect(request.database) as conn:
+                await conn.execute("SELECT 1")
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported database type: {request.db_type}")
+        
+        return {"success": True, "message": "Connection successful"}
+    
+    except Exception as e:
+        return {"success": False, "message": f"Connection failed: {str(e)}"}
+
+@api_router.get("/connections/{connection_id}/tables")
+async def get_connection_tables(connection_id: str):
+    """Get list of tables from a database connection"""
+    connection = await db.connections.find_one({"id": connection_id}, {"_id": 0})
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    
+    tables = await fetch_tables_from_db(connection)
+    
+    # Update last_used
+    await db.connections.update_one(
+        {"id": connection_id},
+        {"$set": {"last_used": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {"tables": tables}
+
+@api_router.get("/connections/{connection_id}/tables/{table_name}/columns")
+async def get_table_columns(connection_id: str, table_name: str):
+    """Get columns for a specific table"""
+    connection = await db.connections.find_one({"id": connection_id}, {"_id": 0})
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    
+    columns = await fetch_columns_from_db(connection, table_name)
+    return {"columns": columns}
+
+@api_router.get("/connections/{connection_id}/tables/{table_name}/preview")
+async def preview_table_data(
+    connection_id: str, 
+    table_name: str,
+    limit: int = Query(100, ge=1, le=1000)
+):
+    """Preview data from a table"""
+    connection = await db.connections.find_one({"id": connection_id}, {"_id": 0})
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    
+    # Get columns first
+    columns = await fetch_columns_from_db(connection, table_name)
+    column_names = [c["name"] for c in columns]
+    
+    # Fetch sample data
+    data = await fetch_sample_data(connection, table_name, column_names, limit)
+    
+    return {
+        "columns": columns,
+        "data": data,
+        "row_count": len(data)
+    }
+
+@api_router.post("/sessions/{session_id}/import-from-db")
+async def import_table_from_db(
+    session_id: str,
+    connection_id: str,
+    table_name: str,
+    columns: Optional[List[str]] = None,
+    limit: int = Query(10000, ge=1, le=100000)
+):
+    """Import a table from database connection into a session"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    connection = await db.connections.find_one({"id": connection_id}, {"_id": 0})
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    
+    # Get column info
+    db_columns = await fetch_columns_from_db(connection, table_name)
+    
+    # Filter columns if specified
+    if columns:
+        db_columns = [c for c in db_columns if c["name"] in columns]
+    
+    column_names = [c["name"] for c in db_columns]
+    
+    # Fetch data
+    data = await fetch_sample_data(connection, table_name, column_names, limit)
+    
+    # Build columns with sample values and inferred types
+    session_columns = []
+    for col_info in db_columns:
+        col_name = col_info["name"]
+        col_values = [str(row.get(col_name, "")) for row in data if row.get(col_name) is not None]
+        unique_values = list(set(col_values))[:5]
+        
+        inferred_type = map_db_type_to_inferred(col_info["db_type"])
+        
+        session_columns.append(ColumnDefinition(
+            name=col_name,
+            sample_values=unique_values,
+            inferred_type=inferred_type,
+            data_type=inferred_type,
+            standardize=(inferred_type == "string"),
+            store_as_is=(inferred_type != "string")
+        ).model_dump())
+    
+    # Create table entry
+    table = SessionTable(
+        table_name=table_name,
+        source_filename=f"db://{connection['name']}/{table_name}",
+        columns=session_columns,
+        raw_data=data
+    )
+    
+    # Add table to session
+    await db.sessions.update_one(
+        {"id": session_id},
+        {
+            "$push": {"tables": table.model_dump()},
+            "$set": {"connection_id": connection_id}
+        }
+    )
+    
+    return {
+        "success": True,
+        "table": {
+            "id": table.id,
+            "table_name": table_name,
+            "source": f"db://{connection['name']}/{table_name}",
+            "columns": len(session_columns),
+            "rows": len(data)
+        }
+    }
 
 # ============ SESSION EXPORT/IMPORT ENDPOINTS ============
 

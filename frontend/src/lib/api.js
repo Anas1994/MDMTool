@@ -148,4 +148,31 @@ export const processSession = (sessionId) =>
 // Domains
 export const getDomains = () => api.get('/domains');
 
+// ============ DATABASE CONNECTIONS ============
+
+export const getConnections = () => api.get('/connections');
+
+export const createConnection = (data) =>
+  api.post('/connections', null, { params: data });
+
+export const testConnection = (data) =>
+  api.post('/connections/test', data);
+
+export const deleteConnection = (connectionId) =>
+  api.delete(`/connections/${connectionId}`);
+
+export const getConnectionTables = (connectionId) =>
+  api.get(`/connections/${connectionId}/tables`);
+
+export const getConnectionTableColumns = (connectionId, tableName) =>
+  api.get(`/connections/${connectionId}/tables/${encodeURIComponent(tableName)}/columns`);
+
+export const previewTableData = (connectionId, tableName, limit = 100) =>
+  api.get(`/connections/${connectionId}/tables/${encodeURIComponent(tableName)}/preview`, { params: { limit } });
+
+export const importTableFromDb = (sessionId, connectionId, tableName, limit = 10000) =>
+  api.post(`/sessions/${sessionId}/import-from-db`, null, {
+    params: { connection_id: connectionId, table_name: tableName, limit }
+  });
+
 export default api;

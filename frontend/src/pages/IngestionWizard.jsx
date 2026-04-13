@@ -15,7 +15,8 @@ import {
   CaretRight,
   CaretDown,
   ArrowRight,
-  Spinner
+  Spinner,
+  Database
 } from '@phosphor-icons/react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -36,9 +37,11 @@ import {
   addColumnToTable,
   saveFieldDefinitions,
   processSession,
-  getDomains
+  getDomains,
+  getSession as fetchSessionApi
 } from '../lib/api';
 import { toast } from 'sonner';
+import DatabaseConnectDialog from '../components/DatabaseConnectDialog';
 
 const STEPS = [
   { id: 1, name: 'Connect', icon: Upload },
@@ -110,12 +113,13 @@ const Stepper = ({ currentStep, completedSteps }) => (
 );
 
 // Step 1: Connect
-const ConnectStep = ({ session, tables, onCreateSession, onUploadFile, onCreateTable, onDeleteTable, onNext }) => {
+const ConnectStep = ({ session, tables, onCreateSession, onUploadFile, onCreateTable, onDeleteTable, onTableImported, onNext }) => {
   const [sessionName, setSessionName] = useState(session?.name || '');
   const [newTableName, setNewTableName] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [dbDialogOpen, setDbDialogOpen] = useState(false);
 
   const handleDrop = useCallback(async (e) => {
     e.preventDefault();
@@ -189,8 +193,8 @@ const ConnectStep = ({ session, tables, onCreateSession, onUploadFile, onCreateT
 
       {session && (
         <>
-          {/* Upload & Manual Options */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Upload, Manual & Database Options */}
+          <div className="grid grid-cols-3 gap-4">
             {/* Upload File Card */}
             <div
               className={`bg-white rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-all ${
@@ -218,6 +222,17 @@ const ConnectStep = ({ session, tables, onCreateSession, onUploadFile, onCreateT
               <p className="text-sm text-slate-500 mt-1">Drag & drop CSV or Excel</p>
             </div>
 
+            {/* Connect to Database Card */}
+            <div
+              className="bg-white rounded-xl border-2 border-dashed border-slate-300 p-8 text-center cursor-pointer transition-all hover:border-sky-400 hover:bg-slate-50"
+              onClick={() => setDbDialogOpen(true)}
+              data-testid="connect-db-zone"
+            >
+              <Database size={32} weight="duotone" className="mx-auto text-slate-400" />
+              <p className="mt-3 font-medium text-slate-900">Connect Database</p>
+              <p className="text-sm text-slate-500 mt-1">PostgreSQL, MySQL, SQLite</p>
+            </div>
+
             {/* Manual Table Card */}
             <div className="bg-white rounded-xl border border-slate-200 p-6">
               <Table size={32} weight="duotone" className="text-slate-400" />
@@ -242,6 +257,14 @@ const ConnectStep = ({ session, tables, onCreateSession, onUploadFile, onCreateT
             </div>
           </div>
 
+          {/* Database Connect Dialog */}
+          <DatabaseConnectDialog
+            open={dbDialogOpen}
+            onOpenChange={setDbDialogOpen}
+            sessionId={session?.id}
+            onTableImported={onTableImported}
+          />
+
           {/* Tables List */}
           {tables.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 p-6">
@@ -254,7 +277,9 @@ const ConnectStep = ({ session, tables, onCreateSession, onUploadFile, onCreateT
                     data-testid={`table-item-${table.id}`}
                   >
                     <div className="flex items-center gap-3">
-                      {table.source_filename?.endsWith('.csv') ? (
+                      {table.source_filename?.startsWith('db://') ? (
+                        <Database size={24} weight="duotone" className="text-sky-600" />
+                      ) : table.source_filename?.endsWith('.csv') ? (
                         <FileCsv size={24} weight="duotone" className="text-emerald-600" />
                       ) : table.source_filename ? (
                         <FileXls size={24} weight="duotone" className="text-emerald-600" />
@@ -953,6 +978,21 @@ export default function IngestionWizard() {
     }
   };
 
+  const handleTableImportedFromDb = (importedTable) => {
+    setTables(prev => [...prev, {
+      id: importedTable.id,
+      table_name: importedTable.table_name,
+      source_filename: importedTable.source,
+      columns: [],
+    }]);
+    // Re-fetch session to get full column data
+    if (session?.id) {
+      fetchSessionApi(session.id).then(res => {
+        setTables(res.data.tables || []);
+      }).catch(() => {});
+    }
+  };
+
   const handleAddColumn = async (tableId, name, type) => {
     try {
       const response = await addColumnToTable(session.id, tableId, name, type);
@@ -1031,6 +1071,7 @@ export default function IngestionWizard() {
             onUploadFile={handleUploadFile}
             onCreateTable={handleCreateTable}
             onDeleteTable={handleDeleteTable}
+            onTableImported={handleTableImportedFromDb}
             onNext={() => goToStep(2)}
           />
         )}
