@@ -270,3 +270,15 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - Top Unmapped Values list with occurrence counts
 - Engine Stats panel (standards, synonyms, keyword rules counts)
 - Quick action buttons: New Ingestion, Test Sandbox
+
+---
+
+## Dark Mode Toggle (April 13, 2026)
+
+### New Features Added
+- Toggle button in sidebar footer switches between light/dark themes
+- Persists in localStorage across sessions
+- Dark theme CSS variables for Shadcn components via `.dark` class on `<html>`
+- Global CSS overrides for `bg-white`, `bg-slate-50`, `border-slate-*`, `text-slate-*` patterns
+- Sidebar, cards, tables, charts, status badges all properly themed
+- Moon/Sun icon toggle with label (shows opposite mode name)

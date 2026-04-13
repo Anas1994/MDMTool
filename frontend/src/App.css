@@ -5,6 +5,55 @@
     background-color: hsl(210 40% 98%);
 }
 
+.dark .app-container {
+    background-color: hsl(222 47% 8%);
+}
+
+/* Dark mode utility overrides for common patterns */
+.dark .bg-white {
+    background-color: hsl(222 47% 13%) !important;
+}
+
+.dark .bg-slate-50 {
+    background-color: hsl(222 40% 10%) !important;
+}
+
+.dark .bg-slate-50\/50 {
+    background-color: hsla(222, 40%, 10%, 0.5) !important;
+}
+
+.dark .border-slate-200 {
+    border-color: hsl(222 30% 20%) !important;
+}
+
+.dark .border-slate-100 {
+    border-color: hsl(222 30% 17%) !important;
+}
+
+.dark .border-slate-300 {
+    border-color: hsl(222 30% 25%) !important;
+}
+
+.dark .text-slate-900 {
+    color: hsl(210 40% 92%) !important;
+}
+
+.dark .text-slate-800 {
+    color: hsl(210 40% 85%) !important;
+}
+
+.dark .text-slate-700 {
+    color: hsl(210 30% 75%) !important;
+}
+
+.dark .text-slate-600 {
+    color: hsl(215 20% 60%) !important;
+}
+
+.dark .text-slate-500 {
+    color: hsl(215 16% 50%) !important;
+}
+
 .main-content {
     flex: 1;
     overflow-x: hidden;
@@ -77,6 +126,10 @@
     border-radius: 3px;
     background-color: #e2e8f0;
     overflow: hidden;
+}
+
+.dark .confidence-bar {
+    background-color: #1e293b;
 }
 
 .confidence-bar-fill {

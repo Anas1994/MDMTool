@@ -53,6 +53,28 @@ code {
         --warning: 38 92% 50%;
         --warning-foreground: 0 0% 100%;
     }
+
+    .dark {
+        --background: 222 47% 8%;
+        --foreground: 210 40% 96%;
+        --card: 222 47% 11%;
+        --card-foreground: 210 40% 96%;
+        --popover: 222 47% 11%;
+        --popover-foreground: 210 40% 96%;
+        --primary: 199 89% 48%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 222 40% 16%;
+        --secondary-foreground: 210 40% 96%;
+        --muted: 222 40% 16%;
+        --muted-foreground: 215 20% 55%;
+        --accent: 222 40% 16%;
+        --accent-foreground: 210 40% 96%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 222 30% 20%;
+        --input: 222 30% 20%;
+        --ring: 199 89% 48%;
+    }
 }
 
 @layer base {
@@ -90,23 +112,23 @@ code {
 
 @layer components {
     .glass-card {
-        @apply bg-white/80 backdrop-blur-xl border border-slate-200/60 shadow-sm;
+        @apply bg-white/80 backdrop-blur-xl border border-slate-200/60 shadow-sm dark:bg-slate-800/80 dark:border-slate-700/60;
     }
     
     .kpi-card {
-        @apply bg-white rounded-xl border border-slate-200 shadow-sm p-6 transition-all duration-200 hover:shadow-md;
+        @apply bg-white rounded-xl border border-slate-200 shadow-sm p-6 transition-all duration-200 hover:shadow-md dark:bg-slate-800 dark:border-slate-700;
     }
     
     .data-table-header {
-        @apply bg-slate-50 px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider border-b border-slate-200;
+        @apply bg-slate-50 px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider border-b border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700;
     }
     
     .data-table-cell {
-        @apply px-4 py-3 whitespace-nowrap text-sm text-slate-900;
+        @apply px-4 py-3 whitespace-nowrap text-sm text-slate-900 dark:text-slate-200;
     }
     
     .data-table-row {
-        @apply hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0;
+        @apply hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0 dark:hover:bg-slate-800/50 dark:border-slate-700/50;
     }
     
     .status-badge {
@@ -114,19 +136,19 @@ code {
     }
     
     .status-auto {
-        @apply bg-emerald-50 text-emerald-700 border border-emerald-200;
+        @apply bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800;
     }
     
     .status-review {
-        @apply bg-amber-50 text-amber-700 border border-amber-200;
+        @apply bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800;
     }
     
     .status-unmapped {
-        @apply bg-rose-50 text-rose-700 border border-rose-200;
+        @apply bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-800;
     }
     
     .status-approved {
-        @apply bg-sky-50 text-sky-700 border border-sky-200;
+        @apply bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950 dark:text-sky-400 dark:border-sky-800;
     }
     
     .confidence-high {
@@ -142,19 +164,19 @@ code {
     }
     
     .upload-zone {
-        @apply border-2 border-dashed border-slate-300 rounded-xl p-12 text-center bg-slate-50/50 hover:bg-slate-100/50 hover:border-sky-400 transition-all duration-200 cursor-pointer;
+        @apply border-2 border-dashed border-slate-300 rounded-xl p-12 text-center bg-slate-50/50 hover:bg-slate-100/50 hover:border-sky-400 transition-all duration-200 cursor-pointer dark:border-slate-600 dark:bg-slate-800/50 dark:hover:bg-slate-700/50;
     }
     
     .upload-zone-active {
-        @apply border-sky-500 bg-sky-50/50;
+        @apply border-sky-500 bg-sky-50/50 dark:bg-sky-900/20;
     }
     
     .sidebar-link {
-        @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors text-sm font-medium;
+        @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors text-sm font-medium dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200;
     }
     
     .sidebar-link-active {
-        @apply bg-sky-50 text-sky-700 hover:bg-sky-100 hover:text-sky-800;
+        @apply bg-sky-50 text-sky-700 hover:bg-sky-100 hover:text-sky-800 dark:bg-sky-900/30 dark:text-sky-400 dark:hover:bg-sky-900/50 dark:hover:text-sky-300;
     }
 }
 
