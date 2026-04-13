@@ -151,6 +151,20 @@ export const getTablePreview = (sessionId, tableId, limit = 20) =>
 // Domains
 export const getDomains = () => api.get('/domains');
 
+// ============ KEYWORD RULES ============
+
+export const getKeywordRules = (includeInactive = false) =>
+  api.get('/keyword-rules', { params: { include_inactive: includeInactive } });
+
+export const createKeywordRule = (data) =>
+  api.post('/keyword-rules', data);
+
+export const updateKeywordRule = (ruleId, data) =>
+  api.put(`/keyword-rules/${ruleId}`, data);
+
+export const deleteKeywordRule = (ruleId) =>
+  api.delete(`/keyword-rules/${ruleId}`);
+
 // ============ DATABASE CONNECTIONS ============
 
 export const getConnections = () => api.get('/connections');

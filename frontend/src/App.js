@@ -9,7 +9,8 @@ import {
   List,
   BookOpen,
   FolderOpen,
-  Folder
+  Folder,
+  Lightning
 } from "@phosphor-icons/react";
 import Dashboard from "./pages/Dashboard";
 import UploadPage from "./pages/Upload";
@@ -20,6 +21,7 @@ import Standards from "./pages/Standards";
 import BatchHistory from "./pages/BatchHistory";
 import IngestionWizard from "./pages/IngestionWizard";
 import SessionHistory from "./pages/SessionHistory";
+import KeywordRules from "./pages/KeywordRules";
 import "@/App.css";
 
 const Sidebar = () => {
@@ -34,6 +36,7 @@ const Sidebar = () => {
     { to: "/review", icon: Table, label: "Review" },
     { to: "/standards", icon: BookOpen, label: "Standards" },
     { to: "/synonyms", icon: Database, label: "Synonyms" },
+    { to: "/keyword-rules", icon: Lightning, label: "Keyword Rules" },
     { to: "/audit", icon: ClockCounterClockwise, label: "Audit Log" },
   ];
 
@@ -99,6 +102,7 @@ function App() {
             <Route path="/review/:batchId" element={<ReviewWorkbench />} />
             <Route path="/standards" element={<Standards />} />
             <Route path="/synonyms" element={<Synonyms />} />
+            <Route path="/keyword-rules" element={<KeywordRules />} />
             <Route path="/audit" element={<AuditLogs />} />
           </Routes>
         </main>

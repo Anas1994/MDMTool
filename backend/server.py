@@ -153,6 +153,22 @@ class DatabaseConnection(BaseModel):
     last_used: Optional[str] = None
     status: str = "active"  # active, inactive, error
 
+# ============ KEYWORD RULE MODELS ============
+
+class KeywordRuleModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    keywords: List[str]  # list of keywords to match
+    standard_code: str
+    standard_label: str = ""
+    confidence: float = 0.85
+    rule_type: str = "simple"  # simple or compound
+    required_keywords: List[str] = []  # for compound rules: all must match
+    exclude_keywords: List[str] = []  # for compound rules: none must match
+    active: bool = True
+    created_by: str = "system"
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
 # ============ DOMAIN REFERENCE DATA ============
 
 DOMAIN_REFERENCES = {
@@ -276,9 +292,29 @@ async def match_normalized(normalized: str) -> Optional[dict]:
         }
     return None
 
-def match_keyword_rules(normalized: str) -> Optional[dict]:
-    """Check keyword-based rules"""
-    # Check compound rules first
+async def match_keyword_rules(normalized: str) -> Optional[dict]:
+    """Check keyword-based rules from DB and hardcoded fallback"""
+    # Load rules from DB first
+    db_rules = await db.keyword_rules.find({"active": True}, {"_id": 0}).to_list(500)
+    
+    # Check compound rules first (from DB)
+    for rule in db_rules:
+        if rule.get("rule_type") == "compound":
+            required = rule.get("required_keywords", [])
+            exclude = rule.get("exclude_keywords", [])
+            if required and all(kw in normalized for kw in required):
+                if not any(kw in normalized for kw in exclude):
+                    std = await get_standard_by_code_db(rule["standard_code"])
+                    if std:
+                        return {
+                            "standard_id": std["code"],
+                            "standard_code": std["code"],
+                            "standard_label": std["label"],
+                            "confidence": rule.get("confidence", 0.90),
+                            "match_type": "keyword"
+                        }
+    
+    # Fallback: hardcoded compound rules
     for rule in COMPOUND_RULES:
         required_match = all(kw in normalized for kw in rule["required"])
         exclude_match = any(kw in normalized for kw in rule["exclude"])
@@ -293,7 +329,22 @@ def match_keyword_rules(normalized: str) -> Optional[dict]:
                     "match_type": "keyword"
                 }
     
-    # Check simple keyword rules
+    # Check simple keyword rules from DB
+    for rule in db_rules:
+        if rule.get("rule_type", "simple") == "simple":
+            for keyword in rule.get("keywords", []):
+                if keyword in normalized:
+                    std = await get_standard_by_code_db(rule["standard_code"])
+                    if std:
+                        return {
+                            "standard_id": std["code"],
+                            "standard_code": std["code"],
+                            "standard_label": std["label"],
+                            "confidence": rule.get("confidence", 0.85),
+                            "match_type": "keyword"
+                        }
+    
+    # Fallback: hardcoded simple rules
     for rule in KEYWORD_RULES:
         for keyword in rule["keywords"]:
             if keyword in normalized:
@@ -382,7 +433,7 @@ async def run_matching_engine(vendor_value: str) -> dict:
         return result
     
     # Step 3: Keyword rules
-    result = match_keyword_rules(normalized)
+    result = await match_keyword_rules(normalized)
     if result:
         result["status"] = "auto" if result["confidence"] >= 0.90 else "needs_review"
         return result
@@ -465,6 +516,42 @@ async def seed_initial_synonyms():
                 ).model_dump()
                 await db.synonyms.insert_one(doc)
         logging.info("Seeded initial synonyms")
+
+async def seed_keyword_rules():
+    """Seed keyword rules from hardcoded lists if DB is empty"""
+    count = await db.keyword_rules.count_documents({})
+    if count == 0:
+        # Seed simple rules
+        for rule in KEYWORD_RULES:
+            std = get_standard_by_code(rule["standard_code"])
+            label = std["label"] if std else rule["standard_code"]
+            doc = KeywordRuleModel(
+                keywords=rule["keywords"],
+                standard_code=rule["standard_code"],
+                standard_label=label,
+                confidence=rule["confidence"],
+                rule_type="simple",
+                created_by="system"
+            ).model_dump()
+            await db.keyword_rules.insert_one(doc)
+        
+        # Seed compound rules
+        for rule in COMPOUND_RULES:
+            std = get_standard_by_code(rule["standard_code"])
+            label = std["label"] if std else rule["standard_code"]
+            doc = KeywordRuleModel(
+                keywords=[],
+                standard_code=rule["standard_code"],
+                standard_label=label,
+                confidence=rule["confidence"],
+                rule_type="compound",
+                required_keywords=rule["required"],
+                exclude_keywords=rule["exclude"],
+                created_by="system"
+            ).model_dump()
+            await db.keyword_rules.insert_one(doc)
+        
+        logging.info("Seeded keyword rules")
 
 # ============ API ENDPOINTS ============
 
@@ -1539,6 +1626,127 @@ async def get_domains():
     """Get all available domains and their reference values"""
     return {"domains": DOMAIN_REFERENCES}
 
+# ============ KEYWORD RULES ENDPOINTS ============
+
+class KeywordRuleCreateRequest(BaseModel):
+    keywords: List[str] = []
+    standard_code: str
+    confidence: float = 0.85
+    rule_type: str = "simple"
+    required_keywords: List[str] = []
+    exclude_keywords: List[str] = []
+
+class KeywordRuleUpdateRequest(BaseModel):
+    keywords: Optional[List[str]] = None
+    standard_code: Optional[str] = None
+    confidence: Optional[float] = None
+    rule_type: Optional[str] = None
+    required_keywords: Optional[List[str]] = None
+    exclude_keywords: Optional[List[str]] = None
+    active: Optional[bool] = None
+
+@api_router.get("/keyword-rules")
+async def list_keyword_rules(include_inactive: bool = False):
+    """Get all keyword rules"""
+    query = {} if include_inactive else {"active": True}
+    rules = await db.keyword_rules.find(query, {"_id": 0}).sort("created_at", 1).to_list(500)
+    return {"rules": rules, "total": len(rules)}
+
+@api_router.post("/keyword-rules")
+async def create_keyword_rule(request: KeywordRuleCreateRequest, user: str = "user"):
+    """Create a new keyword rule"""
+    std = await get_standard_by_code_db(request.standard_code)
+    if not std:
+        raise HTTPException(status_code=400, detail=f"Invalid standard code: {request.standard_code}")
+    
+    rule = KeywordRuleModel(
+        keywords=[k.strip().lower() for k in request.keywords if k.strip()],
+        standard_code=std["code"],
+        standard_label=std["label"],
+        confidence=request.confidence,
+        rule_type=request.rule_type,
+        required_keywords=[k.strip().lower() for k in request.required_keywords if k.strip()],
+        exclude_keywords=[k.strip().lower() for k in request.exclude_keywords if k.strip()],
+        created_by=user
+    )
+    doc = rule.model_dump()
+    await db.keyword_rules.insert_one(doc)
+    
+    audit = AuditLog(
+        action="create_keyword_rule",
+        entity_type="keyword_rule",
+        entity_id=rule.id,
+        details={"standard_code": std["code"], "rule_type": request.rule_type},
+        user=user
+    ).model_dump()
+    await db.audit_logs.insert_one(audit)
+    
+    return {"success": True, "rule": rule.model_dump()}
+
+@api_router.put("/keyword-rules/{rule_id}")
+async def update_keyword_rule(rule_id: str, request: KeywordRuleUpdateRequest, user: str = "user"):
+    """Update a keyword rule"""
+    existing = await db.keyword_rules.find_one({"id": rule_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Keyword rule not found")
+    
+    update_data = {}
+    if request.keywords is not None:
+        update_data["keywords"] = [k.strip().lower() for k in request.keywords if k.strip()]
+    if request.standard_code is not None:
+        std = await get_standard_by_code_db(request.standard_code)
+        if not std:
+            raise HTTPException(status_code=400, detail=f"Invalid standard code: {request.standard_code}")
+        update_data["standard_code"] = std["code"]
+        update_data["standard_label"] = std["label"]
+    if request.confidence is not None:
+        update_data["confidence"] = request.confidence
+    if request.rule_type is not None:
+        update_data["rule_type"] = request.rule_type
+    if request.required_keywords is not None:
+        update_data["required_keywords"] = [k.strip().lower() for k in request.required_keywords if k.strip()]
+    if request.exclude_keywords is not None:
+        update_data["exclude_keywords"] = [k.strip().lower() for k in request.exclude_keywords if k.strip()]
+    if request.active is not None:
+        update_data["active"] = request.active
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    await db.keyword_rules.update_one({"id": rule_id}, {"$set": update_data})
+    
+    audit = AuditLog(
+        action="update_keyword_rule",
+        entity_type="keyword_rule",
+        entity_id=rule_id,
+        details=update_data,
+        user=user
+    ).model_dump()
+    await db.audit_logs.insert_one(audit)
+    
+    updated = await db.keyword_rules.find_one({"id": rule_id}, {"_id": 0})
+    return {"success": True, "rule": updated}
+
+@api_router.delete("/keyword-rules/{rule_id}")
+async def delete_keyword_rule(rule_id: str, user: str = "user"):
+    """Delete a keyword rule"""
+    existing = await db.keyword_rules.find_one({"id": rule_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Keyword rule not found")
+    
+    result = await db.keyword_rules.delete_one({"id": rule_id})
+    
+    audit = AuditLog(
+        action="delete_keyword_rule",
+        entity_type="keyword_rule",
+        entity_id=rule_id,
+        details={"standard_code": existing.get("standard_code")},
+        user=user
+    ).model_dump()
+    await db.audit_logs.insert_one(audit)
+    
+    return {"success": True}
+
 # ============ DATABASE CONNECTION ENDPOINTS ============
 
 async def get_db_connection(conn_config: dict):
@@ -2140,6 +2348,7 @@ async def startup_event():
     """Initialize database on startup"""
     await seed_standards()
     await seed_initial_synonyms()
+    await seed_keyword_rules()
     logger.info("MDM Mapping Tool started")
 
 @app.on_event("shutdown")
