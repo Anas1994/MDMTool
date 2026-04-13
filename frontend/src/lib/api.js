@@ -165,6 +165,16 @@ export const updateKeywordRule = (ruleId, data) =>
 export const deleteKeywordRule = (ruleId) =>
   api.delete(`/keyword-rules/${ruleId}`);
 
+// ============ AI MATCHING ============
+
+export const getAiMatchingStatus = () => api.get('/ai-matching/status');
+
+export const previewAiMatching = (batchId) =>
+  api.post('/ai-matching/preview', { batch_id: batchId });
+
+export const runAiMatching = (batchId) =>
+  api.post('/ai-matching/run', { batch_id: batchId });
+
 // ============ DATABASE CONNECTIONS ============
 
 export const getConnections = () => api.get('/connections');

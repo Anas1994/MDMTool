@@ -11,7 +11,9 @@ import {
   Plus,
   ArrowLeft,
   CaretDown,
-  X
+  X,
+  Brain,
+  Spinner
 } from '@phosphor-icons/react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -22,6 +24,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from '../components/ui/sheet';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -43,7 +51,10 @@ import {
   approveMapping,
   bulkApproveMappings,
   markUnmapped,
-  exportBatch
+  exportBatch,
+  getAiMatchingStatus,
+  previewAiMatching,
+  runAiMatching
 } from '../lib/api';
 import { toast } from 'sonner';
 
@@ -233,6 +244,12 @@ export default function ReviewWorkbench() {
   const [matchTypeFilter, setMatchTypeFilter] = useState('');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
+  
+  // AI Matching
+  const [aiAvailable, setAiAvailable] = useState(false);
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiPreview, setAiPreview] = useState(null);
+  const [showAiConfirm, setShowAiConfirm] = useState(false);
 
   const fetchResults = useCallback(async (batchIdToFetch) => {
     if (!batchIdToFetch) return;
@@ -266,12 +283,14 @@ export default function ReviewWorkbench() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [batchesRes, standardsRes] = await Promise.all([
+        const [batchesRes, standardsRes, aiRes] = await Promise.all([
           getBatches(1, 100),
-          getStandards()
+          getStandards(),
+          getAiMatchingStatus().catch(() => ({ data: { available: false } }))
         ]);
         setBatches(batchesRes.data.batches);
         setStandards(standardsRes.data.standards);
+        setAiAvailable(aiRes.data.available);
         
         if (batchId) {
           await fetchResults(batchId);
@@ -370,6 +389,32 @@ export default function ReviewWorkbench() {
     setPage(1);
   };
 
+  const handleAiMatchingClick = async () => {
+    if (!batchId) return;
+    try {
+      const res = await previewAiMatching(batchId);
+      setAiPreview(res.data);
+      setShowAiConfirm(true);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to preview AI matching');
+    }
+  };
+
+  const handleRunAiMatching = async () => {
+    setShowAiConfirm(false);
+    setAiRunning(true);
+    try {
+      const res = await runAiMatching(batchId);
+      const { auto_mapped, needs_review, still_unmapped } = res.data;
+      toast.success(`AI matched ${auto_mapped} auto + ${needs_review} review. ${still_unmapped} still unmapped.`);
+      fetchResults(batchId);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'AI matching failed');
+    } finally {
+      setAiRunning(false);
+    }
+  };
+
   if (loading && !currentBatch) {
     return (
       <div className="p-8 flex items-center justify-center min-h-screen">
@@ -455,6 +500,24 @@ export default function ReviewWorkbench() {
             </Button>
           )}
           
+          {aiAvailable && currentBatch?.unmapped > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAiMatchingClick}
+              disabled={aiRunning}
+              className="border-purple-200 text-purple-700 hover:bg-purple-50"
+              data-testid="ai-matching-btn"
+            >
+              {aiRunning ? (
+                <Spinner size={16} className="mr-1.5 animate-spin" />
+              ) : (
+                <Brain size={16} className="mr-1.5" weight="duotone" />
+              )}
+              {aiRunning ? 'AI Running...' : 'AI Match'}
+            </Button>
+          )}
+          
           <Button
             variant="outline"
             size="sm"
@@ -504,6 +567,7 @@ export default function ReviewWorkbench() {
             <SelectItem value="normalized">Normalized</SelectItem>
             <SelectItem value="keyword">Keyword</SelectItem>
             <SelectItem value="fuzzy">Fuzzy</SelectItem>
+            <SelectItem value="ai">AI</SelectItem>
             <SelectItem value="no_match">No Match</SelectItem>
           </SelectContent>
         </Select>
@@ -690,6 +754,46 @@ export default function ReviewWorkbench() {
         onApprove={handleApprove}
         onClose={() => setEditMapping(null)}
       />
+
+      {/* AI Matching Confirmation Dialog */}
+      <Dialog open={showAiConfirm} onOpenChange={setShowAiConfirm}>
+        <DialogContent className="sm:max-w-[440px]" data-testid="ai-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain size={22} weight="duotone" className="text-purple-600" />
+              AI-Powered Matching
+            </DialogTitle>
+          </DialogHeader>
+          {aiPreview && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                This will send <span className="font-semibold text-slate-900">{aiPreview.unmapped_count}</span> unmapped values to GPT-5.2 for intelligent matching against your standard codes.
+              </p>
+              {aiPreview.values.length > 0 && (
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs font-medium text-slate-500 mb-2">Sample values:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {aiPreview.values.map((v, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-white text-slate-700 rounded text-xs border border-slate-200">
+                        {v.length > 30 ? v.substring(0, 30) + '...' : v}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => setShowAiConfirm(false)} data-testid="ai-cancel-btn">
+                  Cancel
+                </Button>
+                <Button className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={handleRunAiMatching} data-testid="ai-confirm-btn">
+                  <Brain size={16} className="mr-1.5" />
+                  Run AI Matching
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

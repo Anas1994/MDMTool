@@ -19,6 +19,7 @@ import json
 import asyncpg
 import aiomysql
 import aiosqlite
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -452,6 +453,74 @@ async def run_matching_engine(vendor_value: str) -> dict:
         "match_type": "no_match",
         "status": "unmapped"
     }
+
+async def run_ai_matching(vendor_values: List[str], standards_list: List[dict]) -> List[dict]:
+    """Use AI (GPT-5.2) to suggest matches for unmapped values"""
+    llm_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not llm_key:
+        raise HTTPException(status_code=500, detail="AI matching not configured: missing EMERGENT_LLM_KEY")
+    
+    # Build standards context
+    standards_text = "\n".join([f"- {s['code']}: {s['label']} ({s.get('description', '')})" for s in standards_list])
+    
+    system_message = f"""You are a healthcare data standardization expert. Your job is to map vendor-provided values to standard codes.
+
+Available Standard Codes:
+{standards_text}
+
+Rules:
+1. For each vendor value, suggest the BEST matching standard code
+2. Provide a confidence score (0.0-1.0) based on how certain the match is
+3. Provide brief reasoning for the match
+4. If no good match exists, use standard_code: null and confidence: 0.0
+5. Respond ONLY with valid JSON array"""
+
+    # Build the prompt with all values
+    values_text = "\n".join([f"- \"{v}\"" for v in vendor_values])
+    
+    prompt = f"""Map each of these vendor values to the best matching standard code.
+
+Vendor Values:
+{values_text}
+
+Respond with a JSON array. Each element must have:
+- "vendor_value": the original value
+- "standard_code": the matched code (or null)
+- "standard_label": the label of the matched standard (or null)
+- "confidence": float 0.0-1.0
+- "reasoning": brief explanation
+- "suggested_synonym": boolean, true if this mapping should be saved as a synonym for future exact matching
+
+Return ONLY the JSON array, no markdown formatting."""
+
+    try:
+        chat = LlmChat(
+            api_key=llm_key,
+            session_id=f"ai-match-{uuid.uuid4().hex[:8]}",
+            system_message=system_message
+        ).with_model("openai", "gpt-5.2")
+        
+        user_msg = UserMessage(text=prompt)
+        response = await chat.send_message(user_msg)
+        
+        # Parse JSON response
+        response_text = response.strip()
+        # Handle potential markdown code blocks
+        if response_text.startswith("```"):
+            response_text = response_text.split("\n", 1)[1]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+        
+        results = json.loads(response_text)
+        return results
+        
+    except json.JSONDecodeError as e:
+        logging.error(f"AI matching JSON parse error: {e}, response: {response_text[:200]}")
+        raise HTTPException(status_code=500, detail="AI returned invalid JSON response")
+    except Exception as e:
+        logging.error(f"AI matching error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI matching failed: {str(e)}")
 
 # ============ SEED DATA ============
 
@@ -1746,6 +1815,136 @@ async def delete_keyword_rule(rule_id: str, user: str = "user"):
     await db.audit_logs.insert_one(audit)
     
     return {"success": True}
+
+# ============ AI MATCHING ENDPOINTS ============
+
+class AiMatchRequest(BaseModel):
+    batch_id: str
+    
+@api_router.get("/ai-matching/status")
+async def ai_matching_status():
+    """Check if AI matching is available"""
+    llm_key = os.environ.get("EMERGENT_LLM_KEY")
+    return {"available": bool(llm_key), "model": "gpt-5.2"}
+
+@api_router.post("/ai-matching/preview")
+async def ai_matching_preview(request: AiMatchRequest):
+    """Preview how many unmapped values would be sent to AI"""
+    batch = await db.batches.find_one({"id": request.batch_id}, {"_id": 0})
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    unmapped = await db.mapping_results.find(
+        {"batch_id": request.batch_id, "status": "unmapped"},
+        {"_id": 0, "vendor_value": 1}
+    ).to_list(10000)
+    
+    return {
+        "batch_id": request.batch_id,
+        "unmapped_count": len(unmapped),
+        "values": [m["vendor_value"] for m in unmapped[:10]],  # Preview first 10
+        "estimated_cost": "minimal"
+    }
+
+@api_router.post("/ai-matching/run")
+async def run_ai_matching_endpoint(request: AiMatchRequest, user: str = "user"):
+    """Run AI matching on unmapped values in a batch"""
+    batch = await db.batches.find_one({"id": request.batch_id}, {"_id": 0})
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    # Get unmapped values
+    unmapped = await db.mapping_results.find(
+        {"batch_id": request.batch_id, "status": "unmapped"},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    if not unmapped:
+        return {"success": True, "message": "No unmapped values to process", "matched": 0}
+    
+    vendor_values = [m["vendor_value"] for m in unmapped]
+    
+    # Get current standards
+    standards = await db.standards.find(
+        {"active_flag": {"$ne": False}},
+        {"_id": 0, "code": 1, "label": 1, "description": 1}
+    ).to_list(500)
+    
+    # Run AI matching
+    ai_results = await run_ai_matching(vendor_values, standards)
+    
+    # Build lookup for quick access
+    ai_lookup = {}
+    for ar in ai_results:
+        ai_lookup[ar.get("vendor_value", "")] = ar
+    
+    matched_count = 0
+    needs_review_count = 0
+    
+    for mapping in unmapped:
+        ai_result = ai_lookup.get(mapping["vendor_value"])
+        if not ai_result or not ai_result.get("standard_code"):
+            continue
+        
+        confidence = ai_result.get("confidence", 0.0)
+        status = "auto" if confidence >= 0.85 else "needs_review"
+        
+        update_data = {
+            "suggested_standard_id": ai_result["standard_code"],
+            "suggested_standard_code": ai_result["standard_code"],
+            "suggested_standard_label": ai_result.get("standard_label", ""),
+            "confidence": confidence,
+            "match_type": "ai",
+            "status": status,
+        }
+        
+        if status == "auto":
+            update_data["final_standard_id"] = ai_result["standard_code"]
+            update_data["final_standard_code"] = ai_result["standard_code"]
+            update_data["final_standard_label"] = ai_result.get("standard_label", "")
+            matched_count += 1
+        else:
+            needs_review_count += 1
+        
+        await db.mapping_results.update_one(
+            {"id": mapping["id"]},
+            {"$set": update_data}
+        )
+    
+    # Update batch stats
+    total_ai = matched_count + needs_review_count
+    if total_ai > 0:
+        await db.batches.update_one(
+            {"id": request.batch_id},
+            {"$inc": {
+                "unmapped": -total_ai,
+                "auto_mapped": matched_count,
+                "needs_review": needs_review_count
+            }}
+        )
+    
+    # Audit log
+    audit = AuditLog(
+        action="ai_matching",
+        entity_type="batch",
+        entity_id=request.batch_id,
+        details={
+            "total_processed": len(vendor_values),
+            "auto_mapped": matched_count,
+            "needs_review": needs_review_count,
+            "model": "gpt-5.2"
+        },
+        user=user
+    ).model_dump()
+    await db.audit_logs.insert_one(audit)
+    
+    return {
+        "success": True,
+        "total_processed": len(vendor_values),
+        "auto_mapped": matched_count,
+        "needs_review": needs_review_count,
+        "still_unmapped": len(vendor_values) - total_ai
+    }
 
 # ============ DATABASE CONNECTION ENDPOINTS ============
 
