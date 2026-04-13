@@ -299,3 +299,20 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - "Retry Match" button (sky-blue, ArrowsClockwise icon) visible when batch has unmapped or needs_review values
 - Loading spinner during retry
 - Toast notification with retry results (newly auto/review/still unmapped)
+
+---
+
+## Bulk Sandbox Testing (April 13, 2026)
+
+### New Features Added
+
+#### Backend
+- `POST /api/sandbox/bulk-test` - Accepts list of values, runs matching engine on each, returns per-value results + summary (total, matched, unmapped, by_type, by_status)
+
+#### Frontend — Enhanced Sandbox (/sandbox)
+- Tab switcher: "Single Test" (existing pipeline visualizer) and "Bulk Test" (new)
+- Textarea for pasting values (one per line) with line count
+- Summary cards: Total Tested, Matched (%), Unmapped, By Match Type breakdown
+- Results table with value, standard, confidence bar, type badge, status badge
+- Export CSV button for bulk test results
+- Supports up to 500 values per test

@@ -2041,6 +2041,44 @@ async def test_value_matching(value: str):
         "final_result": final
     }
 
+class BulkTestRequest(BaseModel):
+    values: List[str]
+
+@api_router.post("/sandbox/bulk-test")
+async def bulk_test_matching(request: BulkTestRequest):
+    """Test multiple values through the matching engine and return summary"""
+    results = []
+    summary = {"total": 0, "matched": 0, "unmapped": 0, "by_type": {}, "by_status": {}}
+    
+    for value in request.values:
+        if not value.strip():
+            continue
+        summary["total"] += 1
+        final = await run_matching_engine(value.strip())
+        
+        match_type = final.get("match_type", "no_match")
+        status = final.get("status", "unmapped")
+        
+        if final.get("standard_code"):
+            summary["matched"] += 1
+        else:
+            summary["unmapped"] += 1
+        
+        summary["by_type"][match_type] = summary["by_type"].get(match_type, 0) + 1
+        summary["by_status"][status] = summary["by_status"].get(status, 0) + 1
+        
+        results.append({
+            "value": value.strip(),
+            "normalized": normalize_text(value.strip()),
+            "standard_code": final.get("standard_code"),
+            "standard_label": final.get("standard_label"),
+            "confidence": final.get("confidence", 0.0),
+            "match_type": match_type,
+            "status": status,
+        })
+    
+    return {"results": results, "summary": summary}
+
 # ============ AI MATCHING ENDPOINTS ============
 
 class AiMatchRequest(BaseModel):

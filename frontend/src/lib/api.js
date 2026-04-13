@@ -183,6 +183,9 @@ export const runAiMatching = (batchId) =>
 export const testValueMatching = (value) =>
   api.post('/sandbox/test', null, { params: { value } });
 
+export const bulkTestMatching = (values) =>
+  api.post('/sandbox/bulk-test', { values });
+
 // ============ ANALYTICS ============
 
 export const getAnalytics = () => api.get('/analytics');
