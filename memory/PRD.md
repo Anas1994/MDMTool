@@ -57,23 +57,26 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - ✅ Core matching engine
 - ✅ File upload and processing
 - ✅ Review and approval workflow
+- ✅ Multi-step Ingestion Pipeline
+- ✅ Session History & Export/Import
+- ✅ Database Connectivity (PostgreSQL, MySQL, SQLite)
 
 ### P1 - Important (Next)
+- [ ] Data preview in Discover step showing actual row data
 - [ ] User-defined keyword rules (Phase 2)
 - [ ] Dynamic standard list management
-- [ ] Batch deletion functionality
 
 ### P2 - Nice to Have
+- [ ] Batch retry for failed matching operations
 - [ ] Dark mode toggle
 - [ ] Bulk export all batches
 - [ ] Advanced analytics dashboard
 - [ ] AI-powered matching (Phase 3)
 
 ## Next Tasks
-1. Add ability for users to create custom keyword rules
-2. Implement standard dictionary management UI
-3. Add batch deletion and archive functionality
-4. Performance optimization for very large files (>500K rows)
+1. Add data preview in Discover step showing actual row data
+2. User-defined keyword rules (Phase 2)
+3. Batch retry for failed matching operations
 
 ---
 
@@ -103,8 +106,46 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 #### Domain References
 - Disposition, Ward, Specialty, Status, Priority, Gender, Country, Custom
 
+#### Session History & Export/Import (April 13, 2026)
+- Export sessions as JSON backup
+- Import sessions from JSON
+- Resume sessions from Session History page
+- Field-level notes/documentation
+
+---
+
+## Phase 1.6: Database Connectivity (April 13, 2026)
+
+### New Features Added
+
+#### Backend - Database Connection Endpoints
+- `POST /api/connections` - Create a saved database connection
+- `GET /api/connections` - List all saved connections
+- `GET /api/connections/{id}` - Get specific connection
+- `DELETE /api/connections/{id}` - Delete a connection
+- `POST /api/connections/test` - Test connection details (PostgreSQL, MySQL, SQLite)
+- `GET /api/connections/{id}/tables` - Browse tables in connected database
+- `GET /api/connections/{id}/tables/{table}/columns` - Get column info for a table
+- `GET /api/connections/{id}/tables/{table}/preview` - Preview sample data
+- `POST /api/sessions/{id}/import-from-db` - Import table data into a session
+
+#### Frontend - Database Connect Dialog
+- Third card "Connect Database" in Ingestion Wizard Step 1 alongside Upload File and Manual Table
+- Full dialog with 4 views: saved connections list, new connection form, table browser, column preview
+- Supports PostgreSQL, MySQL, SQLite database types
+- Test Connection button with real-time feedback
+- Save & Browse Tables workflow
+- Import table into session with row count confirmation
+- Database icon indicator for DB-imported tables in session table list
+
 ### Technical Details
-- Auto-detects column types: string, numeric, date, boolean
-- Supports multiple tables per session
-- Stores raw data for batch processing
-- Integrates with existing matching engine
+- Backend uses asyncpg (PostgreSQL), aiomysql (MySQL), aiosqlite (SQLite) for async connections
+- Column types auto-mapped from DB types to inferred types (string, numeric, date, boolean)
+- Imported tables include raw_data and sample_values for matching engine processing
+- Connection passwords stored in MongoDB (encryption planned for production)
+- Source tracking: `db://{connection_name}/{table_name}` format
+
+### Testing
+- 22/22 backend API tests passed
+- All frontend UI workflows verified via Playwright automation
+- SQLite end-to-end flow tested with sample healthcare data
