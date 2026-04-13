@@ -87,4 +87,48 @@ export const markUnmapped = (mappingId, user = 'user') =>
 export const getAuditLogs = (page = 1, limit = 50, action = null) =>
   api.get('/audit', { params: { page, limit, action } });
 
+// ============ INGESTION SESSIONS ============
+
+// Sessions
+export const createSession = (name) =>
+  api.post('/sessions', null, { params: { name } });
+
+export const getSessions = (page = 1, limit = 20) =>
+  api.get('/sessions', { params: { page, limit } });
+
+export const getSession = (sessionId) =>
+  api.get(`/sessions/${sessionId}`);
+
+export const deleteSession = (sessionId) =>
+  api.delete(`/sessions/${sessionId}`);
+
+// Session Tables
+export const uploadToSession = (sessionId, file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post(`/sessions/${sessionId}/upload`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const createManualTable = (sessionId, tableName) =>
+  api.post(`/sessions/${sessionId}/tables`, null, { params: { table_name: tableName } });
+
+export const deleteTable = (sessionId, tableId) =>
+  api.delete(`/sessions/${sessionId}/tables/${tableId}`);
+
+export const addColumnToTable = (sessionId, tableId, name, inferredType = 'string') =>
+  api.post(`/sessions/${sessionId}/tables/${tableId}/columns`, null, {
+    params: { name, inferred_type: inferredType }
+  });
+
+export const saveFieldDefinitions = (sessionId, tableId, fields) =>
+  api.put(`/sessions/${sessionId}/tables/${tableId}/fields`, { fields });
+
+export const processSession = (sessionId) =>
+  api.post(`/sessions/${sessionId}/process`);
+
+// Domains
+export const getDomains = () => api.get('/domains');
+
 export default api;

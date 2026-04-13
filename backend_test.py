@@ -11,6 +11,9 @@ class MDMAPITester:
         self.tests_run = 0
         self.tests_passed = 0
         self.batch_id = None
+        self.session_id = None
+        self.table_id = None
+        self.batch_ids = []
 
     def run_test(self, name, method, endpoint, expected_status, data=None, files=None, params=None):
         """Run a single API test"""
@@ -33,6 +36,8 @@ class MDMAPITester:
                     response = requests.post(url, json=data, headers=headers, params=params)
             elif method == 'PUT':
                 response = requests.put(url, json=data, headers=headers, params=params)
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=headers, params=params)
 
             success = response.status_code == expected_status
             if success:
@@ -302,6 +307,142 @@ Emergency Room,P008
             return True
         return False
 
+    def test_ingestion_sessions(self):
+        """Test new ingestion session endpoints"""
+        print("\n=== INGESTION SESSION TESTS ===")
+        
+        # Test domains endpoint
+        success, response = self.run_test("Get domains", "GET", "domains", 200)
+        if not success:
+            return False
+        
+        domains = response.get('domains', {})
+        print(f"   Found {len(domains)} domains")
+        
+        # Test session creation
+        session_name = f"Test Session {datetime.now().strftime('%H%M%S')}"
+        success, response = self.run_test(
+            "Create session",
+            "POST",
+            "sessions",
+            200,
+            params={"name": session_name}
+        )
+        if not success or 'session' not in response:
+            return False
+        
+        self.session_id = response['session']['id']
+        print(f"   Created session: {self.session_id}")
+        
+        # Test list sessions
+        success, response = self.run_test("List sessions", "GET", "sessions", 200)
+        if not success:
+            return False
+        
+        # Test get specific session
+        success, response = self.run_test("Get session", "GET", f"sessions/{self.session_id}", 200)
+        if not success:
+            return False
+        
+        # Test file upload to session
+        csv_content = "disposition,count\nHome,100\nReferral,50\nAdmitted,75\nLAMA,10"
+        csv_file = io.BytesIO(csv_content.encode('utf-8'))
+        files = {'file': ('test_data.csv', csv_file, 'text/csv')}
+        
+        success, response = self.run_test(
+            "Upload file to session",
+            "POST",
+            f"sessions/{self.session_id}/upload",
+            200,
+            files=files
+        )
+        if not success or 'table' not in response:
+            return False
+        
+        self.table_id = response['table']['id']
+        print(f"   Uploaded file, created table: {self.table_id}")
+        
+        # Test manual table creation
+        success, response = self.run_test(
+            "Create manual table",
+            "POST",
+            f"sessions/{self.session_id}/tables",
+            200,
+            params={"table_name": "Manual Test Table"}
+        )
+        if not success:
+            return False
+        
+        manual_table_id = response['table']['id']
+        print(f"   Created manual table: {manual_table_id}")
+        
+        # Test add column to manual table
+        success, response = self.run_test(
+            "Add column to table",
+            "POST",
+            f"sessions/{self.session_id}/tables/{manual_table_id}/columns",
+            200,
+            params={"name": "test_column", "inferred_type": "string"}
+        )
+        if not success:
+            return False
+        
+        # Test save field definitions
+        field_definitions = {
+            "fields": [
+                {
+                    "column_name": "disposition",
+                    "data_type": "string",
+                    "standardize": True,
+                    "domain": "Disposition",
+                    "store_as_is": False
+                },
+                {
+                    "column_name": "count",
+                    "data_type": "numeric",
+                    "standardize": False,
+                    "store_as_is": True
+                }
+            ]
+        }
+        
+        success, response = self.run_test(
+            "Save field definitions",
+            "PUT",
+            f"sessions/{self.session_id}/tables/{self.table_id}/fields",
+            200,
+            data=field_definitions
+        )
+        if not success:
+            return False
+        
+        # Test process session
+        success, response = self.run_test(
+            "Process session",
+            "POST",
+            f"sessions/{self.session_id}/process",
+            200
+        )
+        if not success:
+            return False
+        
+        batch_ids = response.get('batch_ids', [])
+        fields_processed = response.get('fields_processed', 0)
+        print(f"   Processed {fields_processed} fields, created {len(batch_ids)} batches")
+        
+        # Test delete session
+        success, response = self.run_test(
+            "Delete session",
+            "DELETE",
+            f"sessions/{self.session_id}",
+            200
+        )
+        if not success:
+            return False
+        
+        print("✅ All ingestion session tests passed")
+        return True
+
 def main():
     print("🚀 Starting MDM Mapping Tool API Tests")
     print("=" * 50)
@@ -321,6 +462,7 @@ def main():
     test_results.append(tester.test_mapping_approval())
     test_results.append(tester.test_export_functionality())
     test_results.append(tester.test_audit_logs())
+    test_results.append(tester.test_ingestion_sessions())  # New ingestion tests
     
     # Print final results
     print("\n" + "=" * 50)

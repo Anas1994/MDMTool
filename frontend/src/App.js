@@ -7,7 +7,8 @@ import {
   ClockCounterClockwise,
   Database,
   List,
-  BookOpen
+  BookOpen,
+  FolderOpen
 } from "@phosphor-icons/react";
 import Dashboard from "./pages/Dashboard";
 import UploadPage from "./pages/Upload";
@@ -16,6 +17,7 @@ import AuditLogs from "./pages/AuditLogs";
 import Synonyms from "./pages/Synonyms";
 import Standards from "./pages/Standards";
 import BatchHistory from "./pages/BatchHistory";
+import IngestionWizard from "./pages/IngestionWizard";
 import "@/App.css";
 
 const Sidebar = () => {
@@ -23,7 +25,8 @@ const Sidebar = () => {
   
   const links = [
     { to: "/", icon: House, label: "Dashboard" },
-    { to: "/upload", icon: Upload, label: "Upload" },
+    { to: "/ingest", icon: FolderOpen, label: "New Ingestion" },
+    { to: "/upload", icon: Upload, label: "Quick Upload" },
     { to: "/batches", icon: List, label: "Batches" },
     { to: "/review", icon: Table, label: "Review" },
     { to: "/standards", icon: BookOpen, label: "Standards" },
@@ -85,6 +88,7 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/ingest" element={<IngestionWizard />} />
             <Route path="/upload" element={<UploadPage />} />
             <Route path="/batches" element={<BatchHistory />} />
             <Route path="/review" element={<ReviewWorkbench />} />

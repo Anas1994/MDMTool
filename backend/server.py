@@ -99,6 +99,45 @@ class AuditLog(BaseModel):
     user: str = "system"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+# ============ SESSION MODELS (Ingestion Pipeline) ============
+
+class ColumnDefinition(BaseModel):
+    name: str
+    sample_values: List[str] = []
+    inferred_type: str = "string"  # string, numeric, date, boolean
+    data_type: Optional[str] = None
+    standardize: bool = True
+    domain: Optional[str] = None
+    standard_reference_code: Optional[str] = None
+    store_as_is: bool = False
+
+class SessionTable(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    table_name: str
+    source_filename: Optional[str] = None
+    columns: List[ColumnDefinition] = []
+    raw_data: Optional[List[Dict[str, Any]]] = None  # Store actual data for processing
+
+class IngestionSession(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    status: str = "draft"  # draft, ready, processing, completed
+    tables: List[SessionTable] = []
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+# ============ DOMAIN REFERENCE DATA ============
+
+DOMAIN_REFERENCES = {
+    "Disposition": ["Discharged", "Admitted", "Transferred", "Deceased", "Left AMA", "Observation", "LAMA", "DAMA", "LWBS"],
+    "Ward": ["ICU", "Emergency", "Maternity", "Oncology", "Pediatrics", "Cardiology", "Neurology", "Orthopedics"],
+    "Specialty": ["Cardiology", "Oncology", "Neurology", "Orthopedics", "Gastroenterology", "Pulmonology", "Nephrology", "Rheumatology"],
+    "Status": ["Active", "Inactive", "Pending", "Cancelled", "Completed", "On Hold"],
+    "Priority": ["Critical", "High", "Medium", "Low", "Routine"],
+    "Gender": ["Male", "Female", "Other", "Unknown", "Non-binary"],
+    "Country": ["United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "India", "Brazil"],
+}
+
 # ============ STANDARD DICTIONARY DATA ============
 
 STANDARD_DICTIONARY = [
@@ -1056,6 +1095,395 @@ async def get_dashboard_stats():
         "needs_review": 0,
         "unmapped": 0
     }
+
+# ============ INGESTION SESSION ENDPOINTS ============
+
+def infer_column_type(series: pd.Series) -> str:
+    """Infer the data type of a pandas series"""
+    # Drop nulls for analysis
+    non_null = series.dropna()
+    if len(non_null) == 0:
+        return "string"
+    
+    # Check if numeric
+    try:
+        pd.to_numeric(non_null)
+        return "numeric"
+    except (ValueError, TypeError):
+        pass
+    
+    # Check if date
+    try:
+        pd.to_datetime(non_null, format='mixed', dayfirst=True)
+        # Additional check: if most values look like dates
+        sample = non_null.head(10).astype(str)
+        date_patterns = r'\d{1,4}[-/]\d{1,2}[-/]\d{1,4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}'
+        if sample.str.match(date_patterns).mean() > 0.5:
+            return "date"
+    except (ValueError, TypeError):
+        pass
+    
+    # Check if boolean
+    bool_values = {'true', 'false', 'yes', 'no', '1', '0', 't', 'f', 'y', 'n'}
+    unique_lower = set(non_null.astype(str).str.lower().unique())
+    if unique_lower.issubset(bool_values) and len(unique_lower) <= 4:
+        return "boolean"
+    
+    return "string"
+
+@api_router.post("/sessions")
+async def create_session(name: str):
+    """Create a new ingestion session"""
+    session = IngestionSession(name=name)
+    doc = session.model_dump()
+    await db.sessions.insert_one(doc)
+    return {"success": True, "session": session.model_dump()}
+
+@api_router.get("/sessions")
+async def list_sessions(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100)
+):
+    """List all sessions sorted by created_at descending"""
+    skip = (page - 1) * limit
+    total = await db.sessions.count_documents({})
+    sessions = await db.sessions.find({}, {"_id": 0, "tables.raw_data": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return {
+        "sessions": sessions,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": (total + limit - 1) // limit
+    }
+
+@api_router.get("/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Get a single session with its tables and fields"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0, "tables.raw_data": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+@api_router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a session"""
+    result = await db.sessions.delete_one({"id": session_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"success": True}
+
+@api_router.post("/sessions/{session_id}/upload")
+async def upload_to_session(
+    session_id: str,
+    file: UploadFile = File(...)
+):
+    """Upload a CSV or Excel file to a session"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    try:
+        content = await file.read()
+        filename = file.filename or "unknown"
+        
+        # Parse file
+        if filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        elif filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(content))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format. Use CSV or Excel.")
+        
+        # Extract table name from filename
+        table_name = filename.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+        
+        # Detect columns with types and sample values
+        columns = []
+        for col in df.columns:
+            sample_values = df[col].dropna().astype(str).unique()[:5].tolist()
+            inferred_type = infer_column_type(df[col])
+            columns.append(ColumnDefinition(
+                name=col,
+                sample_values=sample_values,
+                inferred_type=inferred_type,
+                data_type=inferred_type,
+                standardize=(inferred_type == "string"),
+                store_as_is=(inferred_type != "string")
+            ).model_dump())
+        
+        # Store raw data for later processing
+        raw_data = df.fillna("").astype(str).to_dict('records')
+        
+        # Create table entry
+        table = SessionTable(
+            table_name=table_name,
+            source_filename=filename,
+            columns=columns,
+            raw_data=raw_data
+        )
+        
+        # Add table to session
+        await db.sessions.update_one(
+            {"id": session_id},
+            {"$push": {"tables": table.model_dump()}}
+        )
+        
+        return {
+            "success": True,
+            "table": {
+                "id": table.id,
+                "table_name": table_name,
+                "source_filename": filename,
+                "columns": columns,
+                "row_count": len(df)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
+@api_router.post("/sessions/{session_id}/tables")
+async def create_manual_table(session_id: str, table_name: str):
+    """Manually create a table without uploading a file"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    table = SessionTable(
+        table_name=table_name,
+        source_filename=None,
+        columns=[],
+        raw_data=[]
+    )
+    
+    await db.sessions.update_one(
+        {"id": session_id},
+        {"$push": {"tables": table.model_dump()}}
+    )
+    
+    return {"success": True, "table": {"id": table.id, "table_name": table_name}}
+
+@api_router.delete("/sessions/{session_id}/tables/{table_id}")
+async def delete_table(session_id: str, table_id: str):
+    """Delete a table from a session"""
+    result = await db.sessions.update_one(
+        {"id": session_id},
+        {"$pull": {"tables": {"id": table_id}}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Table not found")
+    return {"success": True}
+
+@api_router.post("/sessions/{session_id}/tables/{table_id}/columns")
+async def add_column_to_table(
+    session_id: str,
+    table_id: str,
+    name: str,
+    inferred_type: str = "string"
+):
+    """Add a column manually to a table"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Find the table
+    table_found = False
+    for table in session.get("tables", []):
+        if table["id"] == table_id:
+            table_found = True
+            break
+    
+    if not table_found:
+        raise HTTPException(status_code=404, detail="Table not found")
+    
+    column = ColumnDefinition(
+        name=name,
+        inferred_type=inferred_type,
+        data_type=inferred_type,
+        standardize=(inferred_type == "string"),
+        store_as_is=(inferred_type != "string")
+    )
+    
+    await db.sessions.update_one(
+        {"id": session_id, "tables.id": table_id},
+        {"$push": {"tables.$.columns": column.model_dump()}}
+    )
+    
+    return {"success": True, "column": column.model_dump()}
+
+class FieldDefinition(BaseModel):
+    column_name: str
+    data_type: str
+    standardize: bool = False
+    domain: Optional[str] = None
+    standard_reference_code: Optional[str] = None
+    store_as_is: bool = True
+    custom_references: Optional[List[str]] = None
+
+class FieldDefinitionsRequest(BaseModel):
+    fields: List[FieldDefinition]
+
+@api_router.put("/sessions/{session_id}/tables/{table_id}/fields")
+async def save_field_definitions(
+    session_id: str,
+    table_id: str,
+    request: FieldDefinitionsRequest
+):
+    """Save field definitions for all columns in a table"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Find the table and update columns
+    tables = session.get("tables", [])
+    table_index = None
+    for i, table in enumerate(tables):
+        if table["id"] == table_id:
+            table_index = i
+            break
+    
+    if table_index is None:
+        raise HTTPException(status_code=404, detail="Table not found")
+    
+    # Update each column with the field definition
+    columns = tables[table_index].get("columns", [])
+    field_map = {f.column_name: f for f in request.fields}
+    
+    for col in columns:
+        if col["name"] in field_map:
+            field = field_map[col["name"]]
+            col["data_type"] = field.data_type
+            col["standardize"] = field.standardize
+            col["domain"] = field.domain
+            col["standard_reference_code"] = field.standard_reference_code
+            col["store_as_is"] = field.store_as_is
+            if field.custom_references:
+                col["custom_references"] = field.custom_references
+    
+    # Update in database
+    await db.sessions.update_one(
+        {"id": session_id, "tables.id": table_id},
+        {"$set": {"tables.$.columns": columns}}
+    )
+    
+    return {"success": True}
+
+@api_router.post("/sessions/{session_id}/process")
+async def process_session(session_id: str):
+    """Process all fields marked for standardization through the matching engine"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    batch_ids = []
+    fields_processed = 0
+    
+    for table in session.get("tables", []):
+        table_name = table.get("table_name", "Unknown")
+        raw_data = table.get("raw_data", [])
+        
+        for column in table.get("columns", []):
+            if not column.get("standardize", False):
+                continue
+            
+            column_name = column["name"]
+            
+            # Extract unique values from raw data
+            if raw_data:
+                values = [row.get(column_name, "") for row in raw_data]
+                df_col = pd.Series(values)
+            else:
+                # For manually created tables, use sample values
+                df_col = pd.Series(column.get("sample_values", []))
+            
+            if df_col.empty:
+                continue
+            
+            # Create batch record
+            value_counts = df_col.fillna("").astype(str).value_counts().to_dict()
+            unique_values = [v for v in value_counts.keys() if v.strip()]
+            
+            if not unique_values:
+                continue
+            
+            batch = BatchUpload(
+                filename=f"{table_name} - {column_name}",
+                column_name=column_name,
+                total_values=len(df_col),
+                status="processing"
+            )
+            batch_dict = batch.model_dump()
+            await db.batches.insert_one(batch_dict)
+            
+            # Process each unique value through matching engine
+            auto_mapped = 0
+            needs_review = 0
+            unmapped = 0
+            
+            for vendor_value in unique_values:
+                normalized = normalize_text(vendor_value)
+                match_result = await run_matching_engine(vendor_value)
+                
+                status = match_result.get("status", "unmapped")
+                if status == "auto":
+                    auto_mapped += 1
+                elif status == "needs_review":
+                    needs_review += 1
+                else:
+                    unmapped += 1
+                
+                mapping = MappingResult(
+                    batch_id=batch.id,
+                    vendor_value=vendor_value,
+                    normalized_value=normalized,
+                    suggested_standard_id=match_result.get("standard_id"),
+                    suggested_standard_code=match_result.get("standard_code"),
+                    suggested_standard_label=match_result.get("standard_label"),
+                    confidence=match_result.get("confidence", 0.0),
+                    match_type=match_result.get("match_type", "no_match"),
+                    final_standard_id=match_result.get("standard_id") if status == "auto" else None,
+                    final_standard_code=match_result.get("standard_code") if status == "auto" else None,
+                    final_standard_label=match_result.get("standard_label") if status == "auto" else None,
+                    status=status,
+                    occurrence_count=value_counts.get(vendor_value, 1)
+                ).model_dump()
+                
+                await db.mapping_results.insert_one(mapping)
+            
+            # Update batch stats
+            await db.batches.update_one(
+                {"id": batch.id},
+                {"$set": {
+                    "unique_values": len(unique_values),
+                    "auto_mapped": auto_mapped,
+                    "needs_review": needs_review,
+                    "unmapped": unmapped,
+                    "status": "completed",
+                    "completed_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            
+            batch_ids.append(batch.id)
+            fields_processed += 1
+    
+    # Update session status
+    await db.sessions.update_one(
+        {"id": session_id},
+        {"$set": {"status": "completed"}}
+    )
+    
+    return {
+        "success": True,
+        "batch_ids": batch_ids,
+        "fields_processed": fields_processed
+    }
+
+@api_router.get("/domains")
+async def get_domains():
+    """Get all available domains and their reference values"""
+    return {"domains": DOMAIN_REFERENCES}
 
 # Include the router in the main app
 app.include_router(api_router)
