@@ -74,3 +74,37 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 2. Implement standard dictionary management UI
 3. Add batch deletion and archive functionality
 4. Performance optimization for very large files (>500K rows)
+
+---
+
+## Phase 1.5 Enhancement: Multi-Step Ingestion Pipeline (April 13, 2026)
+
+### New Features Added
+
+#### Backend - Session Management
+- `POST /api/sessions` - Create new ingestion session
+- `GET /api/sessions` - List all sessions
+- `GET /api/sessions/{id}` - Get session details
+- `DELETE /api/sessions/{id}` - Delete session
+- `POST /api/sessions/{id}/upload` - Upload CSV/Excel with auto column detection
+- `POST /api/sessions/{id}/tables` - Create manual table
+- `POST /api/sessions/{id}/tables/{table_id}/columns` - Add column manually
+- `PUT /api/sessions/{id}/tables/{table_id}/fields` - Save field definitions
+- `POST /api/sessions/{id}/process` - Process through matching engine
+- `GET /api/domains` - Get domain reference values
+
+#### Frontend - 5-Step Ingestion Wizard (/ingest)
+1. **Connect**: Create session, upload files or create tables manually
+2. **Discover**: View detected columns, add columns to manual tables
+3. **Define Fields**: Set data types, toggle standardize/store-as-is
+4. **Standardization Gate**: Review which fields go to matching engine
+5. **Domain & Reference**: Assign domains, view golden reference values, run matching
+
+#### Domain References
+- Disposition, Ward, Specialty, Status, Priority, Gender, Country, Custom
+
+### Technical Details
+- Auto-detects column types: string, numeric, date, boolean
+- Supports multiple tables per session
+- Stores raw data for batch processing
+- Integrates with existing matching engine
