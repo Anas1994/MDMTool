@@ -180,6 +180,10 @@ export const runAiMatching = (batchId) =>
 export const testValueMatching = (value) =>
   api.post('/sandbox/test', null, { params: { value } });
 
+// ============ ANALYTICS ============
+
+export const getAnalytics = () => api.get('/analytics');
+
 // ============ DATABASE CONNECTIONS ============
 
 export const getConnections = () => api.get('/connections');

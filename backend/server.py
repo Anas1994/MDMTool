@@ -1816,6 +1816,82 @@ async def delete_keyword_rule(rule_id: str, user: str = "user"):
     
     return {"success": True}
 
+# ============ ANALYTICS ENDPOINT ============
+
+@api_router.get("/analytics")
+async def get_analytics():
+    """Get detailed analytics for the dashboard"""
+    # Match type distribution
+    match_type_pipeline = [
+        {"$group": {"_id": "$match_type", "count": {"$sum": 1}}}
+    ]
+    match_types_raw = await db.mapping_results.aggregate(match_type_pipeline).to_list(20)
+    match_type_dist = {m["_id"]: m["count"] for m in match_types_raw}
+    
+    # Status distribution
+    status_pipeline = [
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+    ]
+    status_raw = await db.mapping_results.aggregate(status_pipeline).to_list(20)
+    status_dist = {s["_id"]: s["count"] for s in status_raw}
+    
+    # Confidence distribution (buckets)
+    confidence_pipeline = [
+        {"$match": {"confidence": {"$gt": 0}}},
+        {"$bucket": {
+            "groupBy": "$confidence",
+            "boundaries": [0, 0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.01],
+            "default": "other",
+            "output": {"count": {"$sum": 1}}
+        }}
+    ]
+    try:
+        conf_raw = await db.mapping_results.aggregate(confidence_pipeline).to_list(20)
+        confidence_dist = [{"min": c["_id"], "count": c["count"]} for c in conf_raw if c["_id"] != "other"]
+    except Exception:
+        confidence_dist = []
+    
+    # Top unmapped values
+    unmapped_pipeline = [
+        {"$match": {"status": "unmapped"}},
+        {"$sort": {"occurrence_count": -1}},
+        {"$limit": 10},
+        {"$project": {"_id": 0, "vendor_value": 1, "normalized_value": 1, "occurrence_count": 1, "batch_id": 1}}
+    ]
+    top_unmapped = await db.mapping_results.aggregate(unmapped_pipeline).to_list(10)
+    
+    # Batch performance (last 10 batches)
+    batch_perf_pipeline = [
+        {"$sort": {"created_at": -1}},
+        {"$limit": 10},
+        {"$project": {
+            "_id": 0, "id": 1, "filename": 1, "column_name": 1,
+            "auto_mapped": 1, "needs_review": 1, "unmapped": 1,
+            "unique_values": 1, "created_at": 1
+        }}
+    ]
+    batch_perf = await db.batches.aggregate(batch_perf_pipeline).to_list(10)
+    
+    # Total counts
+    total_mappings = await db.mapping_results.count_documents({})
+    total_standards = await db.standards.count_documents({"active_flag": {"$ne": False}})
+    total_synonyms = await db.synonyms.count_documents({})
+    total_keyword_rules = await db.keyword_rules.count_documents({"active": True})
+    
+    return {
+        "match_type_distribution": match_type_dist,
+        "status_distribution": status_dist,
+        "confidence_distribution": confidence_dist,
+        "top_unmapped": top_unmapped,
+        "batch_performance": batch_perf,
+        "totals": {
+            "mappings": total_mappings,
+            "standards": total_standards,
+            "synonyms": total_synonyms,
+            "keyword_rules": total_keyword_rules
+        }
+    }
+
 # ============ MATCHING SANDBOX ENDPOINT ============
 
 @api_router.post("/sandbox/test")

@@ -251,3 +251,22 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - Final Result card with standard label, code, match type, confidence, and status
 - Recent Tests history (last 10) as clickable chips
 - Added to sidebar with Flask icon
+
+---
+
+## Advanced Analytics Dashboard (April 13, 2026)
+
+### New Features Added
+
+#### Backend
+- `GET /api/analytics` - Returns comprehensive analytics: match type distribution, status distribution, confidence histogram buckets, top unmapped values, batch performance, and engine totals
+
+#### Frontend — Enhanced Dashboard (/)
+- 5 KPI cards (Total Values, Auto-Mapped, Needs Review, Unmapped, Standards)
+- Status Breakdown donut chart (CSS conic-gradient) showing auto/approved/review/unmapped
+- Match Type Distribution horizontal bar chart (exact/normalized/keyword/fuzzy/AI/no_match)
+- Confidence Distribution histogram with labeled buckets
+- Batch Performance table with auto-rate progress bars, clickable rows
+- Top Unmapped Values list with occurrence counts
+- Engine Stats panel (standards, synonyms, keyword rules counts)
+- Quick action buttons: New Ingestion, Test Sandbox
