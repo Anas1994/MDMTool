@@ -62,11 +62,10 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - ✅ Database Connectivity (PostgreSQL, MySQL, SQLite)
 
 ### P1 - Important (Next)
-- [ ] User-defined keyword rules (Phase 2)
-- [ ] Dynamic standard list management
+- [ ] Dynamic standard list management improvements
+- [ ] Batch retry for failed matching operations
 
 ### P2 - Nice to Have
-- [ ] Batch retry for failed matching operations
 - [ ] Dark mode toggle
 - [ ] Bulk export all batches
 - [ ] Advanced analytics dashboard
@@ -167,3 +166,33 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - Scrollable data table with alternating row colors
 - Loading spinner while fetching
 - Respects table expansion state
+
+---
+
+## Phase 2: User-Defined Keyword Rules (April 13, 2026)
+
+### New Features Added
+
+#### Backend
+- `KeywordRuleModel` in MongoDB (`keyword_rules` collection) with support for simple and compound rules
+- `GET /api/keyword-rules` - List all rules (with include_inactive filter)
+- `POST /api/keyword-rules` - Create new simple or compound rule
+- `PUT /api/keyword-rules/{id}` - Update rule (keywords, confidence, active toggle, standard)
+- `DELETE /api/keyword-rules/{id}` - Delete a rule
+- Matching engine (`match_keyword_rules`) upgraded to async, reads from DB first with hardcoded fallback
+- Auto-seeds 13 rules (12 simple + 1 compound) from hardcoded lists on first startup
+- Audit logging for all rule changes
+
+#### Frontend — Keyword Rules Page (/keyword-rules)
+- Two-section layout: Simple Rules and Compound Rules
+- Each rule shows: standard code badge, label, confidence %, keyword chips
+- Compound rules show Required (green) and Exclude (red) keyword chips
+- Toggle switch to activate/deactivate rules
+- Edit/delete buttons per rule
+- Create/edit dialog with: rule type selector, keywords input, standard dropdown, confidence slider
+- Added to sidebar navigation with Lightning icon
+
+### Testing
+- 18/18 backend API tests passed
+- All frontend UI workflows verified
+- Integration test: custom rules affect matching engine results
