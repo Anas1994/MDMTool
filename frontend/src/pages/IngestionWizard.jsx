@@ -16,7 +16,9 @@ import {
   CaretDown,
   ArrowRight,
   Spinner,
-  Database
+  Database,
+  Eye,
+  EyeSlash
 } from '@phosphor-icons/react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -38,7 +40,8 @@ import {
   saveFieldDefinitions,
   processSession,
   getDomains,
-  getSession as fetchSessionApi
+  getSession as fetchSessionApi,
+  getTablePreview
 } from '../lib/api';
 import { toast } from 'sonner';
 import DatabaseConnectDialog from '../components/DatabaseConnectDialog';
@@ -326,10 +329,13 @@ const ConnectStep = ({ session, tables, onCreateSession, onUploadFile, onCreateT
 };
 
 // Step 2: Discover Tables
-const DiscoverStep = ({ tables, onAddColumn, onBack, onNext }) => {
+const DiscoverStep = ({ tables, sessionId, onAddColumn, onBack, onNext }) => {
   const [expandedTables, setExpandedTables] = useState(tables.map(t => t.id));
   const [newColumnName, setNewColumnName] = useState({});
   const [newColumnType, setNewColumnType] = useState({});
+  const [previewData, setPreviewData] = useState({});
+  const [previewLoading, setPreviewLoading] = useState({});
+  const [previewVisible, setPreviewVisible] = useState({});
 
   const toggleTable = (tableId) => {
     setExpandedTables(prev =>
@@ -347,86 +353,169 @@ const DiscoverStep = ({ tables, onAddColumn, onBack, onNext }) => {
     setNewColumnType(prev => ({ ...prev, [tableId]: 'string' }));
   };
 
+  const togglePreview = async (tableId) => {
+    if (previewVisible[tableId]) {
+      setPreviewVisible(prev => ({ ...prev, [tableId]: false }));
+      return;
+    }
+    // Load preview data if not already loaded
+    if (!previewData[tableId]) {
+      setPreviewLoading(prev => ({ ...prev, [tableId]: true }));
+      try {
+        const res = await getTablePreview(sessionId, tableId, 20);
+        setPreviewData(prev => ({ ...prev, [tableId]: res.data }));
+      } catch {
+        toast.error('Failed to load data preview');
+      } finally {
+        setPreviewLoading(prev => ({ ...prev, [tableId]: false }));
+      }
+    }
+    setPreviewVisible(prev => ({ ...prev, [tableId]: true }));
+  };
+
   const allTablesHaveColumns = tables.every(t => t.columns?.length > 0);
 
   return (
     <div className="space-y-4" data-testid="discover-step">
-      {tables.map((table) => (
-        <div key={table.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div
-            className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50"
-            onClick={() => toggleTable(table.id)}
-          >
-            <div className="flex items-center gap-3">
-              {expandedTables.includes(table.id) ? (
-                <CaretDown size={20} className="text-slate-500" />
-              ) : (
-                <CaretRight size={20} className="text-slate-500" />
-              )}
-              <div>
-                <p className="font-medium text-slate-900">{table.table_name}</p>
-                <p className="text-xs text-slate-500">{table.columns?.length || 0} columns</p>
-              </div>
-            </div>
-          </div>
+      {tables.map((table) => {
+        const preview = previewData[table.id];
+        const isPreviewVisible = previewVisible[table.id];
+        const isPreviewLoading = previewLoading[table.id];
 
-          {expandedTables.includes(table.id) && (
-            <div className="border-t border-slate-200 p-4 space-y-3">
-              {table.columns?.map((col, idx) => (
-                <div key={idx} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-900">{col.name}</span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium border ${TYPE_COLORS[col.inferred_type] || TYPE_COLORS.string}`}>
-                        {col.inferred_type}
+        return (
+          <div key={table.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50"
+              onClick={() => toggleTable(table.id)}
+            >
+              <div className="flex items-center gap-3">
+                {expandedTables.includes(table.id) ? (
+                  <CaretDown size={20} className="text-slate-500" />
+                ) : (
+                  <CaretRight size={20} className="text-slate-500" />
+                )}
+                <div>
+                  <p className="font-medium text-slate-900">{table.table_name}</p>
+                  <p className="text-xs text-slate-500">{table.columns?.length || 0} columns</p>
+                </div>
+              </div>
+              {/* Data Preview Toggle */}
+              {table.source_filename && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-slate-500 hover:text-sky-600"
+                  onClick={(e) => { e.stopPropagation(); togglePreview(table.id); }}
+                  data-testid={`preview-toggle-${table.id}`}
+                >
+                  {isPreviewLoading ? (
+                    <Spinner size={16} className="animate-spin mr-1.5" />
+                  ) : isPreviewVisible ? (
+                    <EyeSlash size={16} className="mr-1.5" />
+                  ) : (
+                    <Eye size={16} className="mr-1.5" />
+                  )}
+                  {isPreviewVisible ? 'Hide Data' : 'Preview Data'}
+                </Button>
+              )}
+            </div>
+
+            {expandedTables.includes(table.id) && (
+              <div className="border-t border-slate-200 p-4 space-y-3">
+                {/* Data Preview Table */}
+                {isPreviewVisible && preview && (
+                  <div className="mb-4 border border-sky-200 rounded-lg overflow-hidden" data-testid={`data-preview-${table.id}`}>
+                    <div className="px-4 py-2 bg-sky-50 border-b border-sky-200 flex items-center justify-between">
+                      <span className="text-sm font-medium text-sky-700">
+                        Data Preview — {preview.total_rows} total rows (showing {preview.data.length})
                       </span>
                     </div>
-                    {col.sample_values?.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {col.sample_values.slice(0, 5).map((val, i) => (
-                          <span key={i} className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded text-xs">
-                            {val.length > 30 ? val.substring(0, 30) + '...' : val}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <div className="overflow-x-auto max-h-80">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium text-slate-500 border-b border-slate-200 w-10">#</th>
+                            {preview.columns.map(col => (
+                              <th key={col} className="px-3 py-2 text-left font-medium text-slate-600 border-b border-slate-200 whitespace-nowrap">
+                                {col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {preview.data.map((row, idx) => (
+                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                              <td className="px-3 py-1.5 text-slate-400 border-b border-slate-100">{idx + 1}</td>
+                              {preview.columns.map(col => (
+                                <td key={col} className="px-3 py-1.5 text-slate-700 border-b border-slate-100 whitespace-nowrap max-w-[200px] truncate">
+                                  {String(row[col] ?? '')}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )}
 
-              {/* Add Column (for manual tables) */}
-              {!table.source_filename && (
-                <div className="flex gap-2 mt-3 p-3 border border-dashed border-slate-300 rounded-lg">
-                  <Input
-                    placeholder="Column name"
-                    value={newColumnName[table.id] || ''}
-                    onChange={(e) => setNewColumnName(prev => ({ ...prev, [table.id]: e.target.value }))}
-                    className="flex-1"
-                    data-testid={`add-column-name-${table.id}`}
-                  />
-                  <Select
-                    value={newColumnType[table.id] || 'string'}
-                    onValueChange={(v) => setNewColumnType(prev => ({ ...prev, [table.id]: v }))}
-                  >
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="string">String</SelectItem>
-                      <SelectItem value="numeric">Numeric</SelectItem>
-                      <SelectItem value="date">Date</SelectItem>
-                      <SelectItem value="boolean">Boolean</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" onClick={() => handleAddColumn(table.id)} data-testid={`add-column-btn-${table.id}`}>
-                    <Plus size={16} className="mr-1" /> Add
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
+                {/* Column list */}
+                {table.columns?.map((col, idx) => (
+                  <div key={idx} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-slate-900">{col.name}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium border ${TYPE_COLORS[col.inferred_type] || TYPE_COLORS.string}`}>
+                          {col.inferred_type}
+                        </span>
+                      </div>
+                      {col.sample_values?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {col.sample_values.slice(0, 5).map((val, i) => (
+                            <span key={i} className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded text-xs">
+                              {val.length > 30 ? val.substring(0, 30) + '...' : val}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Add Column (for manual tables) */}
+                {!table.source_filename && (
+                  <div className="flex gap-2 mt-3 p-3 border border-dashed border-slate-300 rounded-lg">
+                    <Input
+                      placeholder="Column name"
+                      value={newColumnName[table.id] || ''}
+                      onChange={(e) => setNewColumnName(prev => ({ ...prev, [table.id]: e.target.value }))}
+                      className="flex-1"
+                      data-testid={`add-column-name-${table.id}`}
+                    />
+                    <Select
+                      value={newColumnType[table.id] || 'string'}
+                      onValueChange={(v) => setNewColumnType(prev => ({ ...prev, [table.id]: v }))}
+                    >
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="string">String</SelectItem>
+                        <SelectItem value="numeric">Numeric</SelectItem>
+                        <SelectItem value="date">Date</SelectItem>
+                        <SelectItem value="boolean">Boolean</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" onClick={() => handleAddColumn(table.id)} data-testid={`add-column-btn-${table.id}`}>
+                      <Plus size={16} className="mr-1" /> Add
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       <div className="flex justify-between">
         <Button variant="outline" onClick={onBack} data-testid="back-btn">Back</Button>
@@ -1079,6 +1168,7 @@ export default function IngestionWizard() {
         {currentStep === 2 && (
           <DiscoverStep
             tables={tables}
+            sessionId={session?.id}
             onAddColumn={handleAddColumn}
             onBack={() => setCurrentStep(1)}
             onNext={() => goToStep(3)}

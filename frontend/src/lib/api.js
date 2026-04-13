@@ -145,6 +145,9 @@ export const saveFieldDefinitions = (sessionId, tableId, fields) =>
 export const processSession = (sessionId) =>
   api.post(`/sessions/${sessionId}/process`);
 
+export const getTablePreview = (sessionId, tableId, limit = 20) =>
+  api.get(`/sessions/${sessionId}/tables/${tableId}/preview`, { params: { limit } });
+
 // Domains
 export const getDomains = () => api.get('/domains');
 

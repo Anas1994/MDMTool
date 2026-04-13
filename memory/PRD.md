@@ -62,7 +62,6 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - ✅ Database Connectivity (PostgreSQL, MySQL, SQLite)
 
 ### P1 - Important (Next)
-- [ ] Data preview in Discover step showing actual row data
 - [ ] User-defined keyword rules (Phase 2)
 - [ ] Dynamic standard list management
 
@@ -149,3 +148,22 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 - 22/22 backend API tests passed
 - All frontend UI workflows verified via Playwright automation
 - SQLite end-to-end flow tested with sample healthcare data
+
+---
+
+## Phase 1.7: Data Preview in Discover Step (April 13, 2026)
+
+### New Features Added
+- "Preview Data" / "Hide Data" toggle button on each table in the Discover step (Step 2)
+- Full data table showing actual row data with row numbers, column headers, and scrollable view
+- Shows total rows count and currently displayed count
+- Lazy-loads preview data on first click (doesn't slow down initial page load)
+
+#### Backend
+- `GET /api/sessions/{session_id}/tables/{table_id}/preview` - Returns raw data for a table with configurable limit (default 20, max 200)
+
+#### Frontend
+- Eye/EyeSlash toggle button in each table header
+- Scrollable data table with alternating row colors
+- Loading spinner while fetching
+- Respects table expansion state

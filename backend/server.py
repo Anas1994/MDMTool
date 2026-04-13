@@ -1199,6 +1199,30 @@ async def delete_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     return {"success": True}
 
+@api_router.get("/sessions/{session_id}/tables/{table_id}/preview")
+async def preview_session_table(
+    session_id: str,
+    table_id: str,
+    limit: int = Query(20, ge=1, le=200)
+):
+    """Get raw data preview for a specific table in a session"""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    for table in session.get("tables", []):
+        if table["id"] == table_id:
+            raw_data = table.get("raw_data", [])
+            columns = [c["name"] for c in table.get("columns", [])]
+            return {
+                "table_name": table["table_name"],
+                "columns": columns,
+                "data": raw_data[:limit],
+                "total_rows": len(raw_data)
+            }
+    
+    raise HTTPException(status_code=404, detail="Table not found")
+
 @api_router.post("/sessions/{session_id}/upload")
 async def upload_to_session(
     session_id: str,
