@@ -2216,13 +2216,14 @@ async def get_db_connection(conn_config: dict):
     db_type = conn_config.get("db_type")
     
     if db_type == "postgresql":
+        ssl_val = "require" if conn_config.get("ssl_enabled") else False
         return await asyncpg.connect(
             host=conn_config.get("host", "localhost"),
             port=conn_config.get("port", 5432),
             database=conn_config.get("database"),
             user=conn_config.get("username"),
             password=conn_config.get("password"),
-            ssl=conn_config.get("ssl_enabled", False)
+            ssl=ssl_val
         )
     elif db_type == "mysql":
         return await aiomysql.connect(
@@ -2455,13 +2456,14 @@ async def test_connection(request: ConnectionTestRequest):
         conn_config = request.model_dump()
         
         if request.db_type == "postgresql":
+            ssl_val = "require" if request.ssl_enabled else False
             conn = await asyncpg.connect(
                 host=request.host or "localhost",
                 port=request.port or 5432,
                 database=request.database,
                 user=request.username,
                 password=request.password,
-                ssl=request.ssl_enabled
+                ssl=ssl_val
             )
             await conn.close()
         elif request.db_type == "mysql":

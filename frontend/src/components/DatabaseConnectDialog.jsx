@@ -21,6 +21,7 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Switch } from './ui/switch';
 import {
   Select,
   SelectContent,
@@ -395,6 +396,21 @@ export default function DatabaseConnectDialog({ open, onOpenChange, sessionId, o
                 </div>
               )}
             </div>
+
+            {/* SSL Toggle (for non-SQLite) */}
+            {form.db_type && form.db_type !== 'sqlite' && (
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                <Switch
+                  checked={form.ssl_enabled}
+                  onCheckedChange={v => setForm(p => ({ ...p, ssl_enabled: v }))}
+                  data-testid="conn-ssl-toggle"
+                />
+                <div>
+                  <Label className="text-sm font-medium">SSL / TLS Encryption</Label>
+                  <p className="text-xs text-slate-500">Required for cloud-hosted databases (Aiven, AWS RDS, etc.)</p>
+                </div>
+              </div>
+            )}
 
             {/* Test + Result */}
             <div className="flex items-center gap-3">
