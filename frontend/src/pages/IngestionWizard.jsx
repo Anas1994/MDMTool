@@ -811,8 +811,10 @@ const DomainReferenceStep = ({ tables, fieldDefinitions, setFieldDefinitions, do
   const standardizeFields = [];
   tables.forEach(table => {
     table.columns?.forEach(col => {
-      const def = fieldDefinitions[table.id]?.[col.name];
-      if (def?.standardize) {
+      const def = fieldDefinitions[table.id]?.[col.name] || {
+        standardize: col.inferred_type === 'string' || !col.inferred_type,
+      };
+      if (def.standardize) {
         standardizeFields.push({ tableId: table.id, tableName: table.table_name, column: col });
       }
     });
