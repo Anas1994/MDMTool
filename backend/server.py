@@ -2248,12 +2248,13 @@ async def fetch_tables_from_db(conn_config: dict) -> List[dict]:
             conn = await get_db_connection(conn_config)
             try:
                 rows = await conn.fetch("""
-                    SELECT table_name 
+                    SELECT table_schema, table_name 
                     FROM information_schema.tables 
-                    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-                    ORDER BY table_name
+                    WHERE table_type = 'BASE TABLE'
+                      AND table_schema NOT IN ('pg_catalog', 'information_schema')
+                    ORDER BY table_schema, table_name
                 """)
-                tables = [{"name": row["table_name"], "schema": "public"} for row in rows]
+                tables = [{"name": row["table_name"], "schema": row["table_schema"]} for row in rows]
             finally:
                 await conn.close()
         
@@ -2280,7 +2281,7 @@ async def fetch_tables_from_db(conn_config: dict) -> List[dict]:
     
     return tables
 
-async def fetch_columns_from_db(conn_config: dict, table_name: str) -> List[dict]:
+async def fetch_columns_from_db(conn_config: dict, table_name: str, schema: str = "public") -> List[dict]:
     """Fetch column information from a table"""
     db_type = conn_config.get("db_type")
     columns = []
@@ -2292,9 +2293,9 @@ async def fetch_columns_from_db(conn_config: dict, table_name: str) -> List[dict
                 rows = await conn.fetch("""
                     SELECT column_name, data_type, is_nullable
                     FROM information_schema.columns 
-                    WHERE table_schema = 'public' AND table_name = $1
+                    WHERE table_schema = $1 AND table_name = $2
                     ORDER BY ordinal_position
-                """, table_name)
+                """, schema, table_name)
                 columns = [{
                     "name": row["column_name"],
                     "db_type": row["data_type"],
@@ -2332,7 +2333,7 @@ async def fetch_columns_from_db(conn_config: dict, table_name: str) -> List[dict
     
     return columns
 
-async def fetch_sample_data(conn_config: dict, table_name: str, columns: List[str], limit: int = 100) -> List[dict]:
+async def fetch_sample_data(conn_config: dict, table_name: str, columns: List[str], limit: int = 100, schema: str = "public") -> List[dict]:
     """Fetch sample data from a table"""
     db_type = conn_config.get("db_type")
     data = []
@@ -2343,7 +2344,7 @@ async def fetch_sample_data(conn_config: dict, table_name: str, columns: List[st
         if db_type == "postgresql":
             conn = await get_db_connection(conn_config)
             try:
-                rows = await conn.fetch(f'SELECT {col_list} FROM "{table_name}" LIMIT {limit}')
+                rows = await conn.fetch(f'SELECT {col_list} FROM "{schema}"."{table_name}" LIMIT {limit}')
                 data = [dict(row) for row in rows]
             finally:
                 await conn.close()
@@ -2504,19 +2505,20 @@ async def get_connection_tables(connection_id: str):
     return {"tables": tables}
 
 @api_router.get("/connections/{connection_id}/tables/{table_name}/columns")
-async def get_table_columns(connection_id: str, table_name: str):
+async def get_table_columns(connection_id: str, table_name: str, schema: str = Query("public")):
     """Get columns for a specific table"""
     connection = await db.connections.find_one({"id": connection_id}, {"_id": 0})
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
     
-    columns = await fetch_columns_from_db(connection, table_name)
+    columns = await fetch_columns_from_db(connection, table_name, schema)
     return {"columns": columns}
 
 @api_router.get("/connections/{connection_id}/tables/{table_name}/preview")
 async def preview_table_data(
     connection_id: str, 
     table_name: str,
+    schema: str = Query("public"),
     limit: int = Query(100, ge=1, le=1000)
 ):
     """Preview data from a table"""
@@ -2525,11 +2527,11 @@ async def preview_table_data(
         raise HTTPException(status_code=404, detail="Connection not found")
     
     # Get columns first
-    columns = await fetch_columns_from_db(connection, table_name)
+    columns = await fetch_columns_from_db(connection, table_name, schema)
     column_names = [c["name"] for c in columns]
     
     # Fetch sample data
-    data = await fetch_sample_data(connection, table_name, column_names, limit)
+    data = await fetch_sample_data(connection, table_name, column_names, limit, schema)
     
     return {
         "columns": columns,
@@ -2542,6 +2544,7 @@ async def import_table_from_db(
     session_id: str,
     connection_id: str,
     table_name: str,
+    schema: str = Query("public"),
     columns: Optional[List[str]] = None,
     limit: int = Query(10000, ge=1, le=100000)
 ):
@@ -2555,7 +2558,7 @@ async def import_table_from_db(
         raise HTTPException(status_code=404, detail="Connection not found")
     
     # Get column info
-    db_columns = await fetch_columns_from_db(connection, table_name)
+    db_columns = await fetch_columns_from_db(connection, table_name, schema)
     
     # Filter columns if specified
     if columns:
@@ -2564,7 +2567,7 @@ async def import_table_from_db(
     column_names = [c["name"] for c in db_columns]
     
     # Fetch data
-    data = await fetch_sample_data(connection, table_name, column_names, limit)
+    data = await fetch_sample_data(connection, table_name, column_names, limit, schema)
     
     # Build columns with sample values and inferred types
     session_columns = []

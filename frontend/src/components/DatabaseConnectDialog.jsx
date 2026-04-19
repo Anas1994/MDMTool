@@ -73,6 +73,7 @@ export default function DatabaseConnectDialog({ open, onOpenChange, sessionId, o
   const [tables, setTables] = useState([]);
   const [loadingTables, setLoadingTables] = useState(false);
   const [selectedTable, setSelectedTable] = useState(null);
+  const [selectedSchema, setSelectedSchema] = useState('public');
   const [columns, setColumns] = useState([]);
   const [loadingColumns, setLoadingColumns] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -205,12 +206,13 @@ export default function DatabaseConnectDialog({ open, onOpenChange, sessionId, o
     }
   };
 
-  const handleSelectTable = async (tableName) => {
+  const handleSelectTable = async (tableName, schema) => {
     setSelectedTable(tableName);
+    setSelectedSchema(schema);
     setView('columns');
     setLoadingColumns(true);
     try {
-      const res = await getConnectionTableColumns(activeConnectionId, tableName);
+      const res = await getConnectionTableColumns(activeConnectionId, tableName, schema);
       setColumns(res.data.columns || []);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to fetch columns');
@@ -223,7 +225,7 @@ export default function DatabaseConnectDialog({ open, onOpenChange, sessionId, o
     if (!sessionId || !activeConnectionId || !selectedTable) return;
     setImporting(true);
     try {
-      const res = await importTableFromDb(sessionId, activeConnectionId, selectedTable);
+      const res = await importTableFromDb(sessionId, activeConnectionId, selectedTable, 10000, selectedSchema);
       const imported = res.data.table;
       toast.success(`Imported "${imported.table_name}" — ${imported.rows} rows, ${imported.columns} columns`);
       onTableImported(imported);
@@ -470,9 +472,9 @@ export default function DatabaseConnectDialog({ open, onOpenChange, sessionId, o
               <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
                 {tables.map(t => (
                   <div
-                    key={t.name}
+                    key={`${t.schema}.${t.name}`}
                     className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:bg-sky-50 hover:border-sky-300 cursor-pointer transition-colors"
-                    onClick={() => handleSelectTable(t.name)}
+                    onClick={() => handleSelectTable(t.name, t.schema)}
                     data-testid={`db-table-${t.name}`}
                   >
                     <div className="flex items-center gap-2">

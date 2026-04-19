@@ -206,15 +206,15 @@ export const deleteConnection = (connectionId) =>
 export const getConnectionTables = (connectionId) =>
   api.get(`/connections/${connectionId}/tables`);
 
-export const getConnectionTableColumns = (connectionId, tableName) =>
-  api.get(`/connections/${connectionId}/tables/${encodeURIComponent(tableName)}/columns`);
+export const getConnectionTableColumns = (connectionId, tableName, schema = 'public') =>
+  api.get(`/connections/${connectionId}/tables/${encodeURIComponent(tableName)}/columns`, { params: { schema } });
 
-export const previewTableData = (connectionId, tableName, limit = 100) =>
-  api.get(`/connections/${connectionId}/tables/${encodeURIComponent(tableName)}/preview`, { params: { limit } });
+export const previewTableData = (connectionId, tableName, limit = 100, schema = 'public') =>
+  api.get(`/connections/${connectionId}/tables/${encodeURIComponent(tableName)}/preview`, { params: { limit, schema } });
 
-export const importTableFromDb = (sessionId, connectionId, tableName, limit = 10000) =>
+export const importTableFromDb = (sessionId, connectionId, tableName, limit = 10000, schema = 'public') =>
   api.post(`/sessions/${sessionId}/import-from-db`, null, {
-    params: { connection_id: connectionId, table_name: tableName, limit }
+    params: { connection_id: connectionId, table_name: tableName, limit, schema }
   });
 
 export default api;
