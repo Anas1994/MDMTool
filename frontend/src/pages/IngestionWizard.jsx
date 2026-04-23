@@ -807,6 +807,7 @@ const StandardizationGateStep = ({ tables, fieldDefinitions, setFieldDefinitions
 // Step 5: Domain & Reference
 const DomainReferenceStep = ({ tables, fieldDefinitions, setFieldDefinitions, domains, onBack, onProcess }) => {
   const [processing, setProcessing] = useState(false);
+  const [selectedForProcessing, setSelectedForProcessing] = useState({});
 
   const standardizeFields = [];
   tables.forEach(table => {
@@ -815,10 +816,31 @@ const DomainReferenceStep = ({ tables, fieldDefinitions, setFieldDefinitions, do
         standardize: col.inferred_type === 'string' || !col.inferred_type,
       };
       if (def.standardize) {
-        standardizeFields.push({ tableId: table.id, tableName: table.table_name, column: col });
+        const key = `${table.id}::${col.name}`;
+        standardizeFields.push({ tableId: table.id, tableName: table.table_name, column: col, key });
       }
     });
   });
+
+  // Initialize all fields as selected by default
+  useState(() => {
+    const initial = {};
+    standardizeFields.forEach(f => { initial[f.key] = true; });
+    setSelectedForProcessing(initial);
+  });
+
+  const toggleField = (key) => {
+    setSelectedForProcessing(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleAll = () => {
+    const allSelected = standardizeFields.every(f => selectedForProcessing[f.key]);
+    const next = {};
+    standardizeFields.forEach(f => { next[f.key] = !allSelected; });
+    setSelectedForProcessing(next);
+  };
+
+  const selectedCount = standardizeFields.filter(f => selectedForProcessing[f.key]).length;
 
   const suggestDomain = (columnName) => {
     const lower = columnName.toLowerCase();
@@ -854,13 +876,25 @@ const DomainReferenceStep = ({ tables, fieldDefinitions, setFieldDefinitions, do
   };
 
   const handleProcess = async () => {
+    // Get only selected field keys
+    const selected = standardizeFields
+      .filter(f => selectedForProcessing[f.key])
+      .map(f => ({ tableId: f.tableId, columnName: f.column.name }));
+    
+    if (selected.length === 0) {
+      toast.error('Select at least one field to process');
+      return;
+    }
+    
     setProcessing(true);
     try {
-      await onProcess();
+      await onProcess(selected);
     } finally {
       setProcessing(false);
     }
   };
+
+  const allSelected = standardizeFields.length > 0 && standardizeFields.every(f => selectedForProcessing[f.key]);
 
   return (
     <div className="space-y-6" data-testid="domain-step">
@@ -869,108 +903,137 @@ const DomainReferenceStep = ({ tables, fieldDefinitions, setFieldDefinitions, do
           <p className="text-slate-500">No fields marked for standardization</p>
         </div>
       ) : (
-        tables.map((table) => {
-          const tableFields = standardizeFields.filter(f => f.tableId === table.id);
-          if (tableFields.length === 0) return null;
-          
-          return (
-            <div key={table.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
-                <h3 className="font-semibold text-slate-900">{table.table_name}</h3>
-              </div>
-              <div className="p-4 space-y-4">
-                {tableFields.map(({ column }) => {
-                  const def = fieldDefinitions[table.id]?.[column.name] || {};
-                  const selectedDomain = def.domain || suggestDomain(column.name);
-                  const domainRefs = selectedDomain && selectedDomain !== 'Custom' ? domains[selectedDomain] : [];
+        <>
+          {/* Select all / count header */}
+          <div className="flex items-center justify-between bg-white rounded-lg border border-slate-200 px-4 py-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                data-testid="select-all-fields"
+              />
+              <span className="text-sm font-medium text-slate-700">
+                {selectedCount} of {standardizeFields.length} fields selected for processing
+              </span>
+            </label>
+          </div>
 
-                  return (
-                    <div key={column.name} className="p-4 bg-slate-50 rounded-lg">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <p className="font-medium text-slate-900">{column.name}</p>
-                          {column.sample_values?.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {column.sample_values.slice(0, 5).map((val, i) => (
-                                <span key={i} className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded text-xs">
-                                  {val.length > 25 ? val.substring(0, 25) + '...' : val}
+          {tables.map((table) => {
+            const tableFields = standardizeFields.filter(f => f.tableId === table.id);
+            if (tableFields.length === 0) return null;
+            
+            return (
+              <div key={table.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
+                  <h3 className="font-semibold text-slate-900">{table.table_name}</h3>
+                </div>
+                <div className="p-4 space-y-4">
+                  {tableFields.map(({ column, key }) => {
+                    const def = fieldDefinitions[table.id]?.[column.name] || {};
+                    const selectedDomain = def.domain || suggestDomain(column.name);
+                    const domainRefs = selectedDomain && selectedDomain !== 'Custom' ? domains[selectedDomain] : [];
+                    const isSelected = selectedForProcessing[key];
+
+                    return (
+                      <div key={column.name} className={`p-4 rounded-lg border transition-colors ${isSelected ? 'bg-slate-50 border-slate-200' : 'bg-slate-50/30 border-slate-100 opacity-50'}`}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleField(key)}
+                              className="mt-1 w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                              data-testid={`select-field-${column.name}`}
+                            />
+                            <div className="flex-1">
+                              <p className="font-medium text-slate-900">{column.name}</p>
+                              {column.sample_values?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {column.sample_values.slice(0, 5).map((val, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded text-xs">
+                                      {val.length > 25 ? val.substring(0, 25) + '...' : val}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <Select
+                            value={selectedDomain}
+                            onValueChange={(v) => updateDomain(table.id, column.name, v)}
+                            disabled={!isSelected}
+                          >
+                            <SelectTrigger className="w-40" data-testid={`domain-select-${column.name}`}>
+                              <SelectValue placeholder="Select domain" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Disposition">Disposition</SelectItem>
+                              <SelectItem value="Ward">Ward</SelectItem>
+                              <SelectItem value="Specialty">Specialty</SelectItem>
+                              <SelectItem value="Status">Status</SelectItem>
+                              <SelectItem value="Priority">Priority</SelectItem>
+                              <SelectItem value="Gender">Gender</SelectItem>
+                              <SelectItem value="Country">Country</SelectItem>
+                              <SelectItem value="Custom">Custom</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Domain References Preview */}
+                        {isSelected && selectedDomain && selectedDomain !== 'Custom' && domainRefs.length > 0 && (
+                          <div className="mt-3 ml-7 p-3 bg-white rounded border border-slate-200">
+                            <p className="text-xs font-medium text-slate-500 mb-2">Golden Reference Values:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {domainRefs.map((ref, i) => (
+                                <span key={i} className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-xs">
+                                  {ref}
                                 </span>
                               ))}
                             </div>
-                          )}
-                        </div>
-                        <Select
-                          value={selectedDomain}
-                          onValueChange={(v) => updateDomain(table.id, column.name, v)}
-                        >
-                          <SelectTrigger className="w-40" data-testid={`domain-select-${column.name}`}>
-                            <SelectValue placeholder="Select domain" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Disposition">Disposition</SelectItem>
-                            <SelectItem value="Ward">Ward</SelectItem>
-                            <SelectItem value="Specialty">Specialty</SelectItem>
-                            <SelectItem value="Status">Status</SelectItem>
-                            <SelectItem value="Priority">Priority</SelectItem>
-                            <SelectItem value="Gender">Gender</SelectItem>
-                            <SelectItem value="Country">Country</SelectItem>
-                            <SelectItem value="Custom">Custom</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* Domain References Preview */}
-                      {selectedDomain && selectedDomain !== 'Custom' && domainRefs.length > 0 && (
-                        <div className="mt-3 p-3 bg-white rounded border border-slate-200">
-                          <p className="text-xs font-medium text-slate-500 mb-2">Golden Reference Values:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {domainRefs.map((ref, i) => (
-                              <span key={i} className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-xs">
-                                {ref}
-                              </span>
-                            ))}
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {/* Custom References Input */}
-                      {selectedDomain === 'Custom' && (
-                        <div className="mt-3">
-                          <Input
-                            placeholder="Enter custom values separated by commas"
-                            defaultValue={def.custom_references?.join(', ') || ''}
-                            onBlur={(e) => {
-                              const refs = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                              updateCustomRefs(table.id, column.name, refs);
-                            }}
-                            data-testid={`custom-refs-${column.name}`}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                        {/* Custom References Input */}
+                        {isSelected && selectedDomain === 'Custom' && (
+                          <div className="mt-3 ml-7">
+                            <Input
+                              placeholder="Enter custom values separated by commas"
+                              defaultValue={def.custom_references?.join(', ') || ''}
+                              onBlur={(e) => {
+                                const refs = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                                updateCustomRefs(table.id, column.name, refs);
+                              }}
+                              data-testid={`custom-refs-${column.name}`}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })
+            );
+          })}
+        </>
       )}
 
       <div className="flex justify-between">
         <Button variant="outline" onClick={onBack} data-testid="back-btn">Back</Button>
         <Button
           onClick={handleProcess}
-          disabled={processing || standardizeFields.length === 0}
+          disabled={processing || selectedCount === 0}
           className="bg-sky-600 hover:bg-sky-700"
           data-testid="run-matching-btn"
         >
           {processing ? (
             <>
               <Spinner size={18} className="mr-2 animate-spin" />
-              Processing...
+              Processing {selectedCount} fields...
             </>
           ) : (
-            <>Run Matching Engine</>
+            <>Run Matching Engine ({selectedCount} fields)</>
           )}
         </Button>
       </div>
@@ -1099,7 +1162,7 @@ export default function IngestionWizard() {
     }
   };
 
-  const handleProcess = async () => {
+  const handleProcess = async (selectedFields) => {
     try {
       // Save field definitions for each table
       for (const table of tables) {
@@ -1119,8 +1182,8 @@ export default function IngestionWizard() {
         }
       }
 
-      // Process through matching engine
-      const response = await processSession(session.id);
+      // Process through matching engine with selected fields only
+      const response = await processSession(session.id, selectedFields);
       const { batch_ids, fields_processed } = response.data;
       
       toast.success(`Processing complete — ${fields_processed} fields sent to matching engine`);

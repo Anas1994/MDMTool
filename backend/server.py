@@ -1671,18 +1671,27 @@ async def save_field_definitions(
     
     return {"success": True}
 
+class ProcessSessionRequest(BaseModel):
+    selected_fields: Optional[List[dict]] = None  # [{tableId, columnName}]
+
 @api_router.post("/sessions/{session_id}/process")
-async def process_session(session_id: str):
-    """Process all fields marked for standardization through the matching engine"""
+async def process_session(session_id: str, request: Optional[ProcessSessionRequest] = None):
+    """Process selected fields through the matching engine"""
     session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Build a set of selected fields if provided
+    selected_set = None
+    if request and request.selected_fields:
+        selected_set = {(f["tableId"], f["columnName"]) for f in request.selected_fields}
     
     batch_ids = []
     fields_processed = 0
     
     for table in session.get("tables", []):
         table_name = table.get("table_name", "Unknown")
+        table_id = table.get("id", "")
         raw_data = table.get("raw_data", [])
         
         for column in table.get("columns", []):
@@ -1690,6 +1699,10 @@ async def process_session(session_id: str):
                 continue
             
             column_name = column["name"]
+            
+            # Skip if not in selected set
+            if selected_set and (table_id, column_name) not in selected_set:
+                continue
             
             # Extract unique values from raw data
             if raw_data:

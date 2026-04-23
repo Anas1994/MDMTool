@@ -145,8 +145,8 @@ export const addColumnToTable = (sessionId, tableId, name, inferredType = 'strin
 export const saveFieldDefinitions = (sessionId, tableId, fields) =>
   api.put(`/sessions/${sessionId}/tables/${tableId}/fields`, { fields });
 
-export const processSession = (sessionId) =>
-  api.post(`/sessions/${sessionId}/process`);
+export const processSession = (sessionId, selectedFields = null) =>
+  api.post(`/sessions/${sessionId}/process`, selectedFields ? { selected_fields: selectedFields } : null);
 
 export const getTablePreview = (sessionId, tableId, limit = 20) =>
   api.get(`/sessions/${sessionId}/tables/${tableId}/preview`, { params: { limit } });
