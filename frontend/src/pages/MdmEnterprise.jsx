@@ -174,26 +174,6 @@ export default function MdmEnterprise() {
         {/* ========== EXPORTS TAB ========== */}
         {tab === 'exports' && (
           <div className="space-y-6" data-testid="exports-tab">
-            {/* Filters Row */}
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-slate-600">Domain:</span>
-                <Select value={exportDomain} onValueChange={setExportDomain}>
-                  <SelectTrigger className="w-44" data-testid="export-domain-select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Disposition">Disposition</SelectItem>
-                    <SelectItem value="Ward">Ward</SelectItem>
-                    <SelectItem value="Specialty">Specialty</SelectItem>
-                    <SelectItem value="Gender">Gender</SelectItem>
-                    <SelectItem value="Priority">Priority</SelectItem>
-                    <SelectItem value="All">All Domains</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
             {/* Batch Selector */}
             {batches.length > 0 && (
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden" data-testid="batch-selector-panel">
