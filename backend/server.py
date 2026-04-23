@@ -2795,6 +2795,11 @@ async def update_table(
 # Include the router in the main app
 app.include_router(api_router)
 
+# Include MDM Enterprise router
+from mdm_enterprise import init_mdm_router
+mdm_router = init_mdm_router(db)
+app.include_router(mdm_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

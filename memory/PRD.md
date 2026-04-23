@@ -80,6 +80,35 @@ Build a production-ready MDM Mapping Tool – Controlled Standardization Engine 
 
 ---
 
+## MDM Enterprise Layer (April 13, 2026)
+
+### Snowflake Data Model
+- `DIM_STANDARD_VALUES` — dimension table for all standard codes across domains
+- `BRIDGE_SOURCE_TO_STANDARD` — mapping bridge with full governance fields
+- `DIM_SYNONYMS` — synonym lookup table
+- `DIM_KEYWORD_RULES` — keyword matching rules
+- `MAPPING_HISTORY` — SCD Type 2 change tracking
+- `MDM_AUDIT_LOG` — full audit trail
+- `DIM_DOMAINS` — domain registry
+- `MDM_EXPORTS` — export metadata tracking
+- Domain-specific views (DIM_STANDARD_ED_DISPOSITION, etc.)
+- Full DDL with indexes, sample inserts, useful queries
+
+### MDM REST API (/api/mdm/*)
+- Read: domains, standard-values, mappings (with filters/pagination), real-time lookup
+- Write: create mapping, approve, reject (with governance lifecycle)
+- Export: JSON, CSV, Business Dictionary, Snowflake SQL per domain
+- Governance: lifecycle definition, mapping history, stats
+- Schema: Snowflake DDL download
+
+### Frontend — MDM Enterprise Page (/mdm-enterprise)
+- 3-tab layout: Exports, API Reference, Governance
+- Export cards: JSON, CSV, Business Dictionary, Snowflake SQL with domain selector
+- API Reference: 8 endpoints with method badges, sample payloads, copy button
+- Governance: Status overview cards, lifecycle visualization, architecture diagram
+
+---
+
 ## Phase 1.5 Enhancement: Multi-Step Ingestion Pipeline (April 13, 2026)
 
 ### New Features Added

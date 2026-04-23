@@ -14,7 +14,8 @@ import {
   Lightning,
   Flask,
   Moon,
-  Sun
+  Sun,
+  Buildings
 } from "@phosphor-icons/react";
 import Dashboard from "./pages/Dashboard";
 import UploadPage from "./pages/Upload";
@@ -27,6 +28,7 @@ import IngestionWizard from "./pages/IngestionWizard";
 import SessionHistory from "./pages/SessionHistory";
 import KeywordRules from "./pages/KeywordRules";
 import Sandbox from "./pages/Sandbox";
+import MdmEnterprise from "./pages/MdmEnterprise";
 import "@/App.css";
 
 const Sidebar = ({ darkMode, toggleDarkMode }) => {
@@ -43,6 +45,7 @@ const Sidebar = ({ darkMode, toggleDarkMode }) => {
     { to: "/synonyms", icon: Database, label: "Synonyms" },
     { to: "/keyword-rules", icon: Lightning, label: "Keyword Rules" },
     { to: "/sandbox", icon: Flask, label: "Test Sandbox" },
+    { to: "/mdm-enterprise", icon: Buildings, label: "MDM Enterprise" },
     { to: "/audit", icon: ClockCounterClockwise, label: "Audit Log" },
   ];
 
@@ -130,6 +133,7 @@ function App() {
             <Route path="/synonyms" element={<Synonyms />} />
             <Route path="/keyword-rules" element={<KeywordRules />} />
             <Route path="/sandbox" element={<Sandbox />} />
+            <Route path="/mdm-enterprise" element={<MdmEnterprise />} />
             <Route path="/audit" element={<AuditLogs />} />
           </Routes>
         </main>
