@@ -345,7 +345,8 @@ async def reject_mapping_mdm(mapping_id: str, request: RejectRequest):
 async def export_domain(
     domain: str,
     format: str = Query("json", enum=["json", "csv", "business_dictionary", "snowflake_sql"]),
-    status: str = Query("approved", description="Filter by status: all, approved, auto, needs_review")
+    status: str = Query("approved", description="Filter by status: all, approved, auto, needs_review"),
+    batch_ids: Optional[str] = Query(None, description="Comma-separated batch IDs to include")
 ):
     """Export domain mappings in various formats"""
 
@@ -356,6 +357,12 @@ async def export_domain(
             query["status"] = {"$in": ["approved", "auto"]}
         else:
             query["status"] = status
+
+    # Filter by selected batch IDs
+    if batch_ids:
+        batch_id_list = [b.strip() for b in batch_ids.split(",") if b.strip()]
+        if batch_id_list:
+            query["batch_id"] = {"$in": batch_id_list}
 
     mappings_raw = await _db.mapping_results.find(query, {"_id": 0}).to_list(100000)
     standards = await _db.standards.find({"active_flag": {"$ne": False}}, {"_id": 0}).to_list(1000)

@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { toast } from 'sonner';
-import api from '../lib/api';
+import api, { getBatches } from '../lib/api';
 
 const LIFECYCLE_COLORS = {
   proposed: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -41,6 +41,8 @@ export default function MdmEnterprise() {
   const [loading, setLoading] = useState(true);
   const [exportDomain, setExportDomain] = useState('Disposition');
   const [exporting, setExporting] = useState(null);
+  const [batches, setBatches] = useState([]);
+  const [selectedBatchIds, setSelectedBatchIds] = useState({});
 
   useEffect(() => {
     loadData();
@@ -48,12 +50,19 @@ export default function MdmEnterprise() {
 
   const loadData = async () => {
     try {
-      const [statsRes, lifecycleRes] = await Promise.all([
+      const [statsRes, lifecycleRes, batchesRes] = await Promise.all([
         api.get('/mdm/governance/stats'),
         api.get('/mdm/governance/lifecycle'),
+        getBatches(1, 100),
       ]);
       setGovStats(statsRes.data);
       setLifecycle(lifecycleRes.data.lifecycle);
+      const batchList = batchesRes.data.batches || [];
+      setBatches(batchList);
+      // Select all by default
+      const initial = {};
+      batchList.forEach(b => { initial[b.id] = true; });
+      setSelectedBatchIds(initial);
     } catch {
       toast.error('Failed to load MDM data');
     } finally {
@@ -61,11 +70,30 @@ export default function MdmEnterprise() {
     }
   };
 
+  const toggleBatch = (id) => {
+    setSelectedBatchIds(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleAllBatches = () => {
+    const allSelected = batches.every(b => selectedBatchIds[b.id]);
+    const next = {};
+    batches.forEach(b => { next[b.id] = !allSelected; });
+    setSelectedBatchIds(next);
+  };
+
+  const selectedBatchCount = batches.filter(b => selectedBatchIds[b.id]).length;
+  const selectedBatchIdList = batches.filter(b => selectedBatchIds[b.id]).map(b => b.id);
+
   const handleExport = async (format) => {
+    if (selectedBatchCount === 0 && format !== 'snowflake_schema') {
+      toast.error('Select at least one batch to export');
+      return;
+    }
     setExporting(format);
+    const batchParam = selectedBatchIdList.join(',');
     try {
       if (format === 'csv') {
-        const res = await api.get(`/mdm/exports/${exportDomain}?format=csv`, { responseType: 'blob' });
+        const res = await api.get(`/mdm/exports/${exportDomain}?format=csv&batch_ids=${batchParam}`, { responseType: 'blob' });
         const url = URL.createObjectURL(new Blob([res.data]));
         const a = document.createElement('a');
         a.href = url;
@@ -83,7 +111,7 @@ export default function MdmEnterprise() {
         URL.revokeObjectURL(url);
         toast.success('Snowflake schema downloaded');
       } else {
-        const res = await api.get(`/mdm/exports/${exportDomain}?format=${format}`);
+        const res = await api.get(`/mdm/exports/${exportDomain}?format=${format}&batch_ids=${batchParam}`);
         const data = JSON.stringify(res.data, null, 2);
         const blob = new Blob([data], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -146,22 +174,73 @@ export default function MdmEnterprise() {
         {/* ========== EXPORTS TAB ========== */}
         {tab === 'exports' && (
           <div className="space-y-6" data-testid="exports-tab">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-sm font-medium text-slate-600">Domain:</span>
-              <Select value={exportDomain} onValueChange={setExportDomain}>
-                <SelectTrigger className="w-48" data-testid="export-domain-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Disposition">Disposition</SelectItem>
-                  <SelectItem value="Ward">Ward</SelectItem>
-                  <SelectItem value="Specialty">Specialty</SelectItem>
-                  <SelectItem value="Gender">Gender</SelectItem>
-                  <SelectItem value="Priority">Priority</SelectItem>
-                  <SelectItem value="All">All Domains</SelectItem>
-                </SelectContent>
-              </Select>
+            {/* Filters Row */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-600">Domain:</span>
+                <Select value={exportDomain} onValueChange={setExportDomain}>
+                  <SelectTrigger className="w-44" data-testid="export-domain-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Disposition">Disposition</SelectItem>
+                    <SelectItem value="Ward">Ward</SelectItem>
+                    <SelectItem value="Specialty">Specialty</SelectItem>
+                    <SelectItem value="Gender">Gender</SelectItem>
+                    <SelectItem value="Priority">Priority</SelectItem>
+                    <SelectItem value="All">All Domains</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+
+            {/* Batch Selector */}
+            {batches.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden" data-testid="batch-selector-panel">
+                <div className="flex items-center justify-between px-5 py-3 bg-slate-50 border-b border-slate-200">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={batches.length > 0 && batches.every(b => selectedBatchIds[b.id])}
+                      onChange={toggleAllBatches}
+                      className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                      data-testid="select-all-batches"
+                    />
+                    <span className="text-sm font-semibold text-slate-700">
+                      Select Batches ({selectedBatchCount} of {batches.length})
+                    </span>
+                  </label>
+                </div>
+                <div className="max-h-52 overflow-y-auto divide-y divide-slate-100">
+                  {batches.map(batch => {
+                    const total = (batch.auto_mapped || 0) + (batch.needs_review || 0) + (batch.unmapped || 0);
+                    return (
+                      <label
+                        key={batch.id}
+                        className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50 cursor-pointer transition-colors"
+                        data-testid={`batch-check-${batch.id}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!selectedBatchIds[batch.id]}
+                          onChange={() => toggleBatch(batch.id)}
+                          className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-800 truncate">{batch.filename}</p>
+                          <p className="text-xs text-slate-500">{batch.unique_values || total} values</p>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-emerald-600">{batch.auto_mapped} auto</span>
+                          <span className="text-amber-600">{batch.needs_review} review</span>
+                          <span className="text-rose-600">{batch.unmapped} unmapped</span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               {[
